@@ -1,0 +1,1 @@
+import {AlertTriangle} from "lucide-react";export function Unaudited(){return <div className="flex gap-3 rounded-xl border border-twenty-warning/30 bg-twenty-warning/10 p-3 text-sm text-twenty-warning"><AlertTriangle className="shrink-0" size={18}/><span>Unaudited. Use at your own risk. Transactions are irreversible.</span></div>}

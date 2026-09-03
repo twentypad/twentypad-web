@@ -1,0 +1,1 @@
+"use client";import {Copy} from "lucide-react";import {shortAddress} from "@/lib/format";import {toast} from "sonner";export function CopyButton({value}:{value:string}){return <button className="inline-flex items-center gap-1 text-twenty-blue-soft" onClick={()=>navigator.clipboard.writeText(value).then(()=>toast.success("Copied"))}><Copy size={14}/>{shortAddress(value)}</button>}
