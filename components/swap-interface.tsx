@@ -9,6 +9,7 @@ import {
   useAccount,
   useBalance,
   usePublicClient,
+  useReadContract,
   useSendTransaction,
   useWriteContract,
 } from "wagmi";
@@ -43,6 +44,48 @@ function displayedBalance(balance?: { value: bigint; decimals: number }) {
 
 function exactBalance(balance?: { value: bigint; decimals: number }) {
   return balance ? formatUnits(balance.value, balance.decimals) : "";
+}
+
+function useAssetBalance({
+  wallet,
+  asset,
+  decimals,
+}: {
+  wallet?: Address;
+  asset?: Address;
+  decimals: number;
+}) {
+  const native = Boolean(asset && isNative(asset));
+  const nativeBalance = useBalance({
+    address: wallet,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(wallet && asset && native),
+      refetchInterval: 12_000,
+    },
+  });
+  const tokenBalance = useReadContract({
+    address: asset && !native ? asset : undefined,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: wallet ? [wallet] : undefined,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(wallet && asset && !native),
+      refetchInterval: 12_000,
+    },
+  });
+  const tokenValue = tokenBalance.data as bigint | undefined;
+  return {
+    data: native
+      ? nativeBalance.data
+      : tokenValue === undefined
+        ? undefined
+        : { value: tokenValue, decimals },
+    error: native ? nativeBalance.error : tokenBalance.error,
+    isLoading: native ? nativeBalance.isLoading : tokenBalance.isLoading,
+    refetch: native ? nativeBalance.refetch : tokenBalance.refetch,
+  };
 }
 
 function AssetIcon({
@@ -108,28 +151,20 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
     error: inputBalanceError,
     isLoading: inputBalanceLoading,
     refetch: refetchInputBalance,
-  } = useBalance({
-    address,
-    chainId: base.id,
-    token: inputAsset && !isNative(inputAsset) ? inputAsset : undefined,
-    query: {
-      enabled: Boolean(address && inputAsset),
-      refetchInterval: 12_000,
-    },
+  } = useAssetBalance({
+    wallet: address,
+    asset: inputAsset,
+    decimals: inputDecimals,
   });
   const {
     data: outputBalance,
     error: outputBalanceError,
     isLoading: outputBalanceLoading,
     refetch: refetchOutputBalance,
-  } = useBalance({
-    address,
-    chainId: base.id,
-    token: outputAsset && !isNative(outputAsset) ? outputAsset : undefined,
-    query: {
-      enabled: Boolean(address && outputAsset),
-      refetchInterval: 12_000,
-    },
+  } = useAssetBalance({
+    wallet: address,
+    asset: outputAsset,
+    decimals: outputDecimals,
   });
 
   const filtered = useMemo(() => {
