@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
 import {
   useAccount,
+  useBalance,
   usePublicClient,
+  useReadContract,
   useSendTransaction,
   useWriteContract,
 } from "wagmi";
@@ -20,6 +22,7 @@ export function SwapTicket({ token }: { token: Token }) {
     [amount, setAmount] = useState(""),
     [out, setOut] = useState<bigint>(),
     [quoting, setQuoting] = useState(false),
+    [working, setWorking] = useState(false),
     [slippage, setSlippage] = useState(15);
   const { address } = useAccount();
   const client = usePublicClient({ chainId: base.id });
@@ -29,6 +32,49 @@ export function SwapTicket({ token }: { token: Token }) {
     quoteDecimals =
       quote.toLowerCase() === ADDRESSES.usdc.toLowerCase() ? 6 : 18;
   const inputDecimals = buy ? quoteDecimals : token.decimals;
+  const inputAsset = buy ? quote : token.address;
+  const inputIsNative =
+    inputAsset.toLowerCase() === ADDRESSES.eth.toLowerCase();
+  const nativeBalance = useBalance({
+    address,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(address && inputIsNative),
+      refetchInterval: 12_000,
+    },
+  });
+  const tokenBalance = useReadContract({
+    address: !inputIsNative ? inputAsset : undefined,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(address && !inputIsNative),
+      refetchInterval: 12_000,
+    },
+  });
+  const inputBalance = inputIsNative
+    ? nativeBalance.data?.value
+    : (tokenBalance.data as bigint | undefined);
+  const inputBalanceLoading = inputIsNative
+    ? nativeBalance.isLoading
+    : tokenBalance.isLoading;
+  const inputSymbol = buy
+    ? quote.toLowerCase() === ADDRESSES.eth.toLowerCase()
+      ? "ETH"
+      : "USDC"
+    : token.symbol || "B20";
+
+  function setBalancePercentage(percent: number) {
+    if (inputBalance === undefined) return;
+    let selected = (inputBalance * BigInt(percent)) / 100n;
+    if (percent === 100 && inputIsNative) {
+      const gasReserve = parseUnits("0.0005", 18);
+      selected = inputBalance > gasReserve ? inputBalance - gasReserve : 0n;
+    }
+    setAmount(formatUnits(selected, inputDecimals));
+  }
   useEffect(() => {
     const timer = setTimeout(async () => {
       setOut(undefined);
@@ -105,6 +151,7 @@ export function SwapTicket({ token }: { token: Token }) {
   async function swap() {
     if (!address || !out || !client) return;
     try {
+      setWorking(true);
       const amountIn = parseUnits(amount, inputDecimals);
       await approve(buy ? quote : token.address, amountIn);
       const minOut = (out * BigInt(10_000 - slippage * 100)) / 10_000n;
@@ -135,8 +182,11 @@ export function SwapTicket({ token }: { token: Token }) {
       });
       toast.success("Swap confirmed");
       setAmount("");
+      await (inputIsNative ? nativeBalance.refetch() : tokenBalance.refetch());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Swap failed");
+    } finally {
+      setWorking(false);
     }
   }
   const anti = Math.max(
@@ -163,7 +213,16 @@ export function SwapTicket({ token }: { token: Token }) {
           exact-output is blocked.
         </div>
       )}
-      <label className="label mt-5">You pay</label>
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <label className="label m-0">You pay</label>
+        <span className="text-xs text-twenty-muted">
+          Balance: {inputBalanceLoading
+            ? "…"
+            : inputBalance === undefined
+              ? "—"
+              : `${Number(formatUnits(inputBalance, inputDecimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${inputSymbol}`}
+        </span>
+      </div>
       <div className="relative">
         <input
           className="input pr-20 text-lg"
@@ -178,6 +237,19 @@ export function SwapTicket({ token }: { token: Token }) {
               : "USDC"
             : token.symbol || "B20"}
         </span>
+      </div>
+      <div className="mt-2 grid grid-cols-5 gap-1.5">
+        {[10, 30, 50, 70, 100].map((percent) => (
+          <button
+            key={percent}
+            type="button"
+            disabled={inputBalance === undefined || inputBalance === 0n || working || isPending}
+            onClick={() => setBalancePercentage(percent)}
+            className="rounded-lg border border-twenty-line bg-twenty-navy px-1 py-2 text-xs font-semibold text-twenty-muted transition hover:border-twenty-blue hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {percent === 100 ? "Max" : `${percent}%`}
+          </button>
+        ))}
       </div>
       <label className="label mt-4">Estimated received</label>
       <div className="input flex items-center text-lg">
@@ -217,12 +289,12 @@ export function SwapTicket({ token }: { token: Token }) {
       </div>
       <button
         className="btn-primary mt-5 w-full"
-        disabled={!address || !out || isPending || anti > 0}
+        disabled={!address || !out || working || isPending || anti > 0}
         onClick={swap}
       >
         {!address
           ? "Connect wallet"
-          : isPending
+          : working || isPending
             ? "Swapping…"
             : anti > 0
               ? "Wait for anti-snipe"
