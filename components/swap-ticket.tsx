@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { formatUnits, parseUnits, type Address } from "viem";
+import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
 import {
   useAccount,
   usePublicClient,
@@ -28,7 +28,7 @@ export function SwapTicket({ token }: { token: Token }) {
   const quote = token.quote,
     quoteDecimals =
       quote.toLowerCase() === ADDRESSES.usdc.toLowerCase() ? 6 : 18;
-  const inputDecimals = buy ? quoteDecimals : 18;
+  const inputDecimals = buy ? quoteDecimals : token.decimals;
   useEffect(() => {
     const timer = setTimeout(async () => {
       setOut(undefined);
@@ -68,21 +68,39 @@ export function SwapTicket({ token }: { token: Token }) {
   }, [amount, buy, client, inputDecimals, quote, token.address]);
   async function approve(asset: Address, amountIn: bigint) {
     if (asset === ADDRESSES.eth) return;
-    const expiry = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
-    const hash1 = await writeContractAsync({
+    if (!client || !address) throw new Error("Wallet client is unavailable");
+    const now = Math.floor(Date.now() / 1000);
+    const expiry = now + 30 * 24 * 3600;
+    const erc20Allowance = await client.readContract({
       address: asset,
       abi: erc20Abi,
-      functionName: "approve",
-      args: [ADDRESSES.permit2, amountIn],
+      functionName: "allowance",
+      args: [address, ADDRESSES.permit2],
     });
-    await client?.waitForTransactionReceipt({ hash: hash1 });
-    const hash2 = await writeContractAsync({
+    if (erc20Allowance < amountIn) {
+      const hash = await writeContractAsync({
+        address: asset,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [ADDRESSES.permit2, maxUint256],
+      });
+      await client.waitForTransactionReceipt({ hash });
+    }
+    const permitAllowance = await client.readContract({
       address: ADDRESSES.permit2,
       abi: permit2Abi,
-      functionName: "approve",
-      args: [asset, ADDRESSES.router, amountIn, expiry],
+      functionName: "allowance",
+      args: [address, asset, ADDRESSES.router],
     });
-    await client?.waitForTransactionReceipt({ hash: hash2 });
+    if (permitAllowance[0] < amountIn || permitAllowance[1] <= now + 1200) {
+      const hash = await writeContractAsync({
+        address: ADDRESSES.permit2,
+        abi: permit2Abi,
+        functionName: "approve",
+        args: [asset, ADDRESSES.router, (1n << 160n) - 1n, expiry],
+      });
+      await client.waitForTransactionReceipt({ hash });
+    }
   }
   async function swap() {
     if (!address || !out || !client) return;
@@ -96,8 +114,13 @@ export function SwapTicket({ token }: { token: Token }) {
         buy,
         amountIn,
         minOut,
-        recipient: address,
         deadline: BigInt(Math.floor(Date.now() / 1000) + 1200),
+      });
+      await client.estimateGas({
+        account: address,
+        to: tx.to,
+        data: tx.data,
+        value: tx.value,
       });
       const hash = await sendTransactionAsync({
         to: tx.to,
@@ -161,7 +184,7 @@ export function SwapTicket({ token }: { token: Token }) {
         {quoting
           ? "Quoting…"
           : out
-            ? formatUnits(out, buy ? 18 : quoteDecimals)
+            ? formatUnits(out, buy ? token.decimals : quoteDecimals)
             : "—"}
       </div>
       {!process.env.NEXT_PUBLIC_V4_QUOTER_ADDRESS && (

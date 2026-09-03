@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, Check, Search, Settings2, X } from "lucide-react";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { formatUnits, parseUnits, type Address } from "viem";
+import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
 import {
   useAccount,
   useBalance,
@@ -246,22 +246,39 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
 
   async function approve(asset: Address, amountIn: bigint) {
     if (isNative(asset)) return;
-    if (!client) throw new Error("Wallet client is unavailable");
-    const expiry = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
-    const approval = await writeContractAsync({
+    if (!client || !address) throw new Error("Wallet client is unavailable");
+    const now = Math.floor(Date.now() / 1000);
+    const expiry = now + 30 * 24 * 3600;
+    const erc20Allowance = await client.readContract({
       address: asset,
       abi: erc20Abi,
-      functionName: "approve",
-      args: [ADDRESSES.permit2, amountIn],
+      functionName: "allowance",
+      args: [address, ADDRESSES.permit2],
     });
-    await client.waitForTransactionReceipt({ hash: approval });
-    const permit = await writeContractAsync({
+    if (erc20Allowance < amountIn) {
+      const approval = await writeContractAsync({
+        address: asset,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [ADDRESSES.permit2, maxUint256],
+      });
+      await client.waitForTransactionReceipt({ hash: approval });
+    }
+    const permitAllowance = await client.readContract({
       address: ADDRESSES.permit2,
       abi: permit2Abi,
-      functionName: "approve",
-      args: [asset, ADDRESSES.router, amountIn, expiry],
+      functionName: "allowance",
+      args: [address, asset, ADDRESSES.router],
     });
-    await client.waitForTransactionReceipt({ hash: permit });
+    if (permitAllowance[0] < amountIn || permitAllowance[1] <= now + 1200) {
+      const permit = await writeContractAsync({
+        address: ADDRESSES.permit2,
+        abi: permit2Abi,
+        functionName: "approve",
+        args: [asset, ADDRESSES.router, (1n << 160n) - 1n, expiry],
+      });
+      await client.waitForTransactionReceipt({ hash: permit });
+    }
   }
 
   async function swap() {
@@ -277,8 +294,13 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
         buy,
         amountIn,
         minOut,
-        recipient: address,
         deadline: BigInt(Math.floor(Date.now() / 1000) + 1200),
+      });
+      await client.estimateGas({
+        account: address,
+        to: transaction.to,
+        data: transaction.data,
+        value: transaction.value,
       });
       const hash = await sendTransactionAsync({
         to: transaction.to,

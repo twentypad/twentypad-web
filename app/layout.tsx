@@ -45,6 +45,9 @@ export const metadata: Metadata = {
   },
   icons: { icon: "/twentypad-pfp.png", apple: "/twentypad-pfp.png" },
   robots: { index: true, follow: true },
+  other: {
+    "base:app_id": "6a995f226e87922b5d1d4629",
+  },
 };
 export const viewport: Viewport = { themeColor: "#0052FF" };
 export default function Layout({ children }: { children: React.ReactNode }) {
