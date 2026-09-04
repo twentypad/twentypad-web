@@ -35,6 +35,7 @@ function discoveryToken(row: DiscoveryRow): Token {
 export async function getDiscoveryTokens(opts: {
   q?: string;
   quote?: string;
+  quotes?: string[];
   sort?: string;
   page?: number;
   pageSize?: number;
@@ -64,6 +65,11 @@ export async function getDiscoveryTokens(opts: {
       : query.or(`name.ilike.%${opts.q}%,symbol.ilike.%${opts.q}%`);
   }
   if (opts.quote) query = query.eq("quote", opts.quote.toLowerCase());
+  if (opts.quotes?.length)
+    query = query.in(
+      "quote",
+      opts.quotes.map((quote) => quote.toLowerCase()),
+    );
   const { data, count, error } = await query;
   if (error) throw error;
   return {

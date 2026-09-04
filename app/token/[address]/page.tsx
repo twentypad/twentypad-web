@@ -27,6 +27,7 @@ export default async function TokenPage({ params }: P) {
   ]);
   if (!t) notFound();
   const s = t.token_stats;
+  const pair = quoteSymbol(t.quote);
   return (
     <div className="space-y-6">
       <section className="card p-5">
@@ -36,7 +37,7 @@ export default async function TokenPage({ params }: P) {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-3xl font-bold">{label(t.name)}</h1>
               <span className="pill text-twenty-ca7">ca7</span>
-              <span className="pill">{quoteSymbol(t.quote)} pair</span>
+              <span className="pill">{pair} pair</span>
             </div>
             <p className="mt-1 text-twenty-muted">
               ${label(t.symbol)} · launched {age(t.launched_at)}
@@ -95,10 +96,10 @@ export default async function TokenPage({ params }: P) {
       </div>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[
-          ["Price", money(s?.price_usd)],
-          ["FDV", money(s?.fdv_usd)],
-          ["Liquidity", number(s?.liquidity_quote)],
-          ["Volume 24h", money(s?.volume_24h)],
+          ["Price", s?.price_usd != null ? money(s.price_usd) : s?.price_quote != null ? `${number(s.price_quote)} ${pair}` : "—"],
+          ["FDV", s?.fdv_usd != null ? money(s.fdv_usd) : s?.fdv_quote != null ? `${number(s.fdv_quote)} ${pair}` : "—"],
+          ["Liquidity", s?.liquidity_quote != null ? `${number(s.liquidity_quote)} ${pair}` : "—"],
+          ["Volume 24h", s?.volume_24h != null ? `${number(s.volume_24h)} ${pair}` : "—"],
           ["Trades 24h", number(s?.trades_24h)],
         ].map(([k, v]) => (
           <div className="card p-4" key={k}>

@@ -1,1 +1,69 @@
-"use client";import {useAccount,useReadContracts,useWriteContract} from "wagmi";import {formatEther,formatUnits} from "viem";import {ADDRESSES} from "@/lib/chain";import {escrowAbi} from "@/lib/abi/escrow";import {toast} from "sonner";export function ClaimFees(){const {address}=useAccount();const calls=address?[ADDRESSES.eth,ADDRESSES.usdc].map(asset=>({address:ADDRESSES.escrow,abi:escrowAbi,functionName:"owed" as const,args:[address,asset] as const})):[];const {data,refetch}=useReadContracts({contracts:calls});const {writeContractAsync,isPending}=useWriteContract();async function claim(asset:typeof ADDRESSES.eth|typeof ADDRESSES.usdc){try{const hash=await writeContractAsync({address:ADDRESSES.escrow,abi:escrowAbi,functionName:"claim",args:[asset]});toast.success(`Claim submitted: ${hash.slice(0,10)}…`);await refetch()}catch(e){toast.error(e instanceof Error?e.message:"Claim failed")}}if(!address)return <div className="card p-5 text-sm text-twenty-muted">Connect the creator wallet to check claimable fees.</div>;const eth=(data?.[0]?.result as bigint|undefined)||0n,usdc=(data?.[1]?.result as bigint|undefined)||0n;return <div className="grid gap-3 sm:grid-cols-2">{[["ETH",formatEther(eth),ADDRESSES.eth,eth],["USDC",formatUnits(usdc,6),ADDRESSES.usdc,usdc]] .map(([name,value,asset,raw])=><div className="card p-5" key={name as string}><p className="text-sm text-twenty-muted">Claimable {name as string}</p><p className="my-3 text-2xl font-semibold">{value as string}</p><button className="btn-primary w-full" disabled={isPending||(raw as bigint)===0n} onClick={()=>claim(asset as typeof ADDRESSES.eth)}>Claim {name as string}</button></div>)}</div>}
+"use client";
+
+import { formatUnits, type Address } from "viem";
+import { useAccount, useReadContracts, useWriteContract } from "wagmi";
+import { toast } from "sonner";
+import { ADDRESSES } from "@/lib/chain";
+import { escrowAbi } from "@/lib/abi/escrow";
+import { QUOTE_ASSETS } from "@/lib/quotes";
+
+export function ClaimFees() {
+  const { address } = useAccount();
+  const calls = address
+    ? QUOTE_ASSETS.map((asset) => ({
+        address: ADDRESSES.escrow,
+        abi: escrowAbi,
+        functionName: "owed" as const,
+        args: [address, asset.address] as const,
+      }))
+    : [];
+  const { data, refetch } = useReadContracts({ contracts: calls });
+  const { writeContractAsync, isPending } = useWriteContract();
+
+  async function claim(asset: Address, symbol: string) {
+    try {
+      const hash = await writeContractAsync({
+        address: ADDRESSES.escrow,
+        abi: escrowAbi,
+        functionName: "claim",
+        args: [asset],
+      });
+      toast.success(`${symbol} claim submitted: ${hash.slice(0, 10)}…`);
+      await refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Claim failed");
+    }
+  }
+
+  if (!address)
+    return (
+      <div className="card p-5 text-sm text-twenty-muted">
+        Connect the creator wallet to check claimable fees.
+      </div>
+    );
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {QUOTE_ASSETS.map((asset, index) => {
+        const raw = (data?.[index]?.result as bigint | undefined) || 0n;
+        return (
+          <div className="card p-5" key={asset.address}>
+            <p className="text-sm text-twenty-muted">
+              Claimable {asset.symbol}
+            </p>
+            <p className="my-3 truncate text-2xl font-semibold">
+              {formatUnits(raw, asset.decimals)}
+            </p>
+            <button
+              className="btn-primary w-full"
+              disabled={isPending || raw === 0n}
+              onClick={() => claim(asset.address, asset.symbol)}
+            >
+              Claim {asset.symbol}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

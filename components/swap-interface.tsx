@@ -23,15 +23,16 @@ import { erc20Abi } from "@/lib/abi/erc20";
 import { permit2Abi } from "@/lib/abi/permit2";
 import { tokenImageUrl } from "./token-image";
 import { Unaudited } from "./unaudited";
+import { isNativeQuote, quoteDecimals, quoteSymbol } from "@/lib/quotes";
 
 type SelectorSide = "pay" | "receive";
 
 function isNative(address: Address) {
-  return address.toLowerCase() === ADDRESSES.eth.toLowerCase();
+  return isNativeQuote(address);
 }
 
 function quoteName(address: Address) {
-  return isNative(address) ? "ETH" : "USDC";
+  return quoteSymbol(address);
 }
 
 function displayedBalance(balance?: { value: bigint; decimals: number }) {
@@ -115,7 +116,7 @@ function AssetIcon({
       className="grid shrink-0 place-items-center rounded-full bg-twenty-blue font-bold text-white"
       style={{ width: size, height: size }}
     >
-      {quote && isNative(quote) ? "Ξ" : "$"}
+      {quote && isNative(quote) ? "Ξ" : quote ? quoteSymbol(quote).slice(0, 1) : "$"}
     </span>
   );
 }
@@ -139,13 +140,12 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
   const { writeContractAsync } = useWriteContract();
 
   const quote = token?.quote;
-  const quoteDecimals =
-    quote?.toLowerCase() === ADDRESSES.usdc.toLowerCase() ? 6 : 18;
+  const pairDecimals = quote ? quoteDecimals(quote) : 18;
   const inputAsset = token && quote ? (buy ? quote : token.address) : undefined;
   const outputAsset =
     token && quote ? (buy ? token.address : quote) : undefined;
-  const inputDecimals = buy ? quoteDecimals : token?.decimals || 18;
-  const outputDecimals = buy ? token?.decimals || 18 : quoteDecimals;
+  const inputDecimals = buy ? pairDecimals : token?.decimals || 18;
+  const outputDecimals = buy ? token?.decimals || 18 : pairDecimals;
   const {
     data: inputBalance,
     error: inputBalanceError,

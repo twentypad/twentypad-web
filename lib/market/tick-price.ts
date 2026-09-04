@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { ADDRESSES } from "@/lib/chain";
+import { configuredQuoteUsd, quoteDecimals, quoteSymbol } from "@/lib/quotes";
 
 const SUPPLY = 1_000_000_000;
 
@@ -10,13 +10,7 @@ export type MarketEstimate = {
   fdvUsd: number | null;
 };
 
-export function quoteDecimals(quote: Address) {
-  return quote.toLowerCase() === ADDRESSES.usdc.toLowerCase() ? 6 : 18;
-}
-
-export function quoteSymbol(quote: Address) {
-  return quote.toLowerCase() === ADDRESSES.usdc.toLowerCase() ? "USDC" : "ETH";
-}
+export { quoteDecimals, quoteSymbol } from "@/lib/quotes";
 
 export function priceFromTick(
   tick: number,
@@ -42,7 +36,7 @@ export function marketEstimate(args: {
   token: Address;
   quote: Address;
   tokenDecimals?: number;
-  ethUsd?: number | null;
+  quoteUsd?: number | null;
 }): MarketEstimate {
   const priceQuote = priceFromTick(
     args.tick,
@@ -50,8 +44,7 @@ export function marketEstimate(args: {
     args.quote,
     args.tokenDecimals,
   );
-  const isUsdc = args.quote.toLowerCase() === ADDRESSES.usdc.toLowerCase();
-  const quoteUsd = isUsdc ? 1 : args.ethUsd || null;
+  const quoteUsd = args.quoteUsd ?? configuredQuoteUsd(args.quote);
   return {
     priceQuote,
     priceUsd: quoteUsd ? priceQuote * quoteUsd : null,
@@ -61,6 +54,5 @@ export function marketEstimate(args: {
 }
 
 export function configuredEthUsd() {
-  const value = Number(process.env.ETH_USD_PRICE || "");
-  return Number.isFinite(value) && value > 0 ? value : null;
+  return configuredQuoteUsd("0x0000000000000000000000000000000000000000");
 }

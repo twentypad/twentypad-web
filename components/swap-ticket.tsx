@@ -17,6 +17,7 @@ import { erc20Abi } from "@/lib/abi/erc20";
 import { permit2Abi } from "@/lib/abi/permit2";
 import { toast } from "sonner";
 import { Unaudited } from "./unaudited";
+import { isNativeQuote, quoteDecimals, quoteSymbol } from "@/lib/quotes";
 export function SwapTicket({ token }: { token: Token }) {
   const [buy, setBuy] = useState(true),
     [amount, setAmount] = useState(""),
@@ -29,12 +30,11 @@ export function SwapTicket({ token }: { token: Token }) {
   const { sendTransactionAsync, isPending } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
   const quote = token.quote,
-    quoteDecimals =
-      quote.toLowerCase() === ADDRESSES.usdc.toLowerCase() ? 6 : 18;
-  const inputDecimals = buy ? quoteDecimals : token.decimals;
+    pairDecimals = quoteDecimals(quote),
+    pairSymbol = quoteSymbol(quote);
+  const inputDecimals = buy ? pairDecimals : token.decimals;
   const inputAsset = buy ? quote : token.address;
-  const inputIsNative =
-    inputAsset.toLowerCase() === ADDRESSES.eth.toLowerCase();
+  const inputIsNative = isNativeQuote(inputAsset);
   const nativeBalance = useBalance({
     address,
     chainId: base.id,
@@ -60,11 +60,7 @@ export function SwapTicket({ token }: { token: Token }) {
   const inputBalanceLoading = inputIsNative
     ? nativeBalance.isLoading
     : tokenBalance.isLoading;
-  const inputSymbol = buy
-    ? quote.toLowerCase() === ADDRESSES.eth.toLowerCase()
-      ? "ETH"
-      : "USDC"
-    : token.symbol || "B20";
+  const inputSymbol = buy ? pairSymbol : token.symbol || "B20";
 
   function setBalancePercentage(percent: number) {
     if (inputBalance === undefined) return;
@@ -113,7 +109,7 @@ export function SwapTicket({ token }: { token: Token }) {
     return () => clearTimeout(timer);
   }, [amount, buy, client, inputDecimals, quote, token.address]);
   async function approve(asset: Address, amountIn: bigint) {
-    if (asset === ADDRESSES.eth) return;
+    if (isNativeQuote(asset)) return;
     if (!client || !address) throw new Error("Wallet client is unavailable");
     const now = Math.floor(Date.now() / 1000);
     const expiry = now + 30 * 24 * 3600;
@@ -231,11 +227,7 @@ export function SwapTicket({ token }: { token: Token }) {
           onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
         />
         <span className="absolute right-3 top-3 text-sm text-twenty-muted">
-          {buy
-            ? quote === ADDRESSES.eth
-              ? "ETH"
-              : "USDC"
-            : token.symbol || "B20"}
+          {buy ? pairSymbol : token.symbol || "B20"}
         </span>
       </div>
       <div className="mt-2 grid grid-cols-5 gap-1.5">
@@ -256,7 +248,7 @@ export function SwapTicket({ token }: { token: Token }) {
         {quoting
           ? "Quoting…"
           : out
-            ? formatUnits(out, buy ? token.decimals : quoteDecimals)
+            ? formatUnits(out, buy ? token.decimals : pairDecimals)
             : "—"}
       </div>
       {!process.env.NEXT_PUBLIC_V4_QUOTER_ADDRESS && (

@@ -12,7 +12,8 @@ import { requireServerRpcUrl } from "@/lib/server-rpc";
 import { factoryAbi } from "@/lib/abi/factory";
 import { serverSupabase } from "@/lib/supabase/server";
 import { text } from "@/lib/types";
-import { configuredEthUsd, marketEstimate } from "@/lib/market/tick-price";
+import { marketEstimate } from "@/lib/market/tick-price";
+import { configuredQuoteUsd, quoteDecimals } from "@/lib/quotes";
 import { poolManagerAbi } from "@/lib/abi/pool-manager";
 const tokenAbi = [
   {
@@ -108,18 +109,17 @@ async function upsertSwap(
   const amountToken = Number(
     formatUnits(tokenDelta < 0n ? -tokenDelta : tokenDelta, token.decimals),
   );
-  const quoteDecimals =
-    token.quote.toLowerCase() === ADDRESSES.usdc.toLowerCase() ? 6 : 18;
+  const pairDecimals = quoteDecimals(token.quote);
   const amountQuote = Number(
-    formatUnits(quoteDelta < 0n ? -quoteDelta : quoteDelta, quoteDecimals),
+    formatUnits(quoteDelta < 0n ? -quoteDelta : quoteDelta, pairDecimals),
   );
-  const signedQuote = Number(formatUnits(quoteDelta, quoteDecimals));
+  const signedQuote = Number(formatUnits(quoteDelta, pairDecimals));
   const estimate = marketEstimate({
     tick: Number(log.args.tick),
     token: token.address,
     quote: token.quote,
     tokenDecimals: token.decimals,
-    ethUsd: configuredEthUsd(),
+    quoteUsd: configuredQuoteUsd(token.quote),
   });
   const { error } = await db.from("trades").upsert(
     {
@@ -279,7 +279,7 @@ async function upsertLaunchedToken(db: DatabaseClient, launch: LaunchedToken) {
     token,
     quote,
     tokenDecimals: Number(decimals),
-    ethUsd: configuredEthUsd(),
+    quoteUsd: configuredQuoteUsd(quote),
   });
   const { error: statsError } = await db.from("token_stats").upsert(
     {

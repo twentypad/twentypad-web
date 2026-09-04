@@ -47,9 +47,9 @@ curl -X POST http://localhost:3000/api/indexer \
 
 The route advances independent `factory` and `market` cursors in `indexer_state`, decoding verified factory `Launched` events plus Uniswap v4 PoolManager `Swap` events for known TwentyPad pool IDs. The separate market cursor automatically starts at `INDEXER_START_BLOCK`, including on an existing installation whose factory cursor is already ahead. It defaults to 10-block `eth_getLogs` ranges and at most 1,000 blocks per cursor per invocation for restrictive free RPC providers, throttles requests, and retries transient failures. Tune `INDEXER_BLOCK_RANGE`, `INDEXER_MAX_BLOCKS_PER_RUN`, `INDEXER_REQUEST_DELAY_MS`, and `INDEXER_RETRY_ATTEMPTS` without changing code. Client pages never scan historical RPC logs. New launches call `/api/tokens/upsert`, while confirmed swaps call `/api/trades/upsert`; both decode the exact receipt immediately and do not wait for the historical cursor.
 
-The discovery page uses only indexed data. A new token starts with its real tick-derived quote price and FDV, zero volume, and zero trades. Confirmed swaps update price, tick, lifetime/24-hour volume, trade counts, estimated quote liquidity, and price change. USDC values map directly to USD. For ETH pairs, set the optional server-only `ETH_USD_PRICE` to a current external reference value to enable USD display; otherwise the UI keeps values in ETH instead of inventing a conversion.
+The discovery page uses only indexed data. A new token starts with its real tick-derived quote price and FDV, zero volume, and zero trades. Confirmed swaps update price, tick, lifetime/24-hour volume, trade counts, estimated quote liquidity, and price change. USDC values map directly to USD. For ETH and tokenized-stock pairs, set the corresponding optional server-only `<SYMBOL>_USD_PRICE` variable to a current external reference value to enable USD display; otherwise the UI keeps values in the real quote unit instead of inventing a conversion.
 
-The `/swap` page uses an in-place, searchable token selector and supports only the verified direct ETH/B20 or USDC/B20 PoolKey belonging to the selected TwentyPad token. It does not hand custom-hook pools to a generic aggregator. When upgrading from an earlier indexer version, run `supabase/schema.sql` once before deploying the new application code; the idempotent migration corrects the earlier reversed trade-side and quote-flow values and refreshes affected token statistics.
+The `/swap` page uses an in-place, searchable token selector and supports only the verified direct PoolKey belonging to the selected TwentyPad token. Supported quote assets are ETH, USDC, AAPLc, AMZNc, GOOGLc, METAc, MSFTc, MSTRc, NVDAc, SNDKc, SPCXc, and TSLAc. It does not hand custom-hook pools to a generic aggregator. When upgrading from an earlier indexer version, run `supabase/schema.sql` once before deploying the new application code; the idempotent migration corrects the earlier reversed trade-side and quote-flow values and refreshes affected token statistics.
 
 ## Contract addresses
 
@@ -58,7 +58,7 @@ All production Base addresses are centralized in `lib/chain.ts`. Factory/profile
 ## Launch behavior
 
 - B20 ASSET, 18 decimals, fixed 1,000,000,000 supply
-- ETH or USDC quote
+- ETH, USDC, or a factory-registered Base tokenized-stock quote
 - Uniswap v4 fee 0, tick spacing 200, TwentyPad launch hook
 - One-sided token liquidity; locked in the hook
 - 1% fee after anti-snipe, split 70% creator / 30% platform

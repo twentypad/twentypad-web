@@ -6,9 +6,19 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { Token } from "@/lib/types";
 import { TokenCardGrid } from "./token-card-grid";
 import { TokenList } from "./token-list";
+import { QUOTE_ASSETS } from "@/lib/quotes";
 
 type View = "cards" | "list";
-const pairs = ["All", "ETH", "USDC"];
+const pairs = [
+  "All",
+  ...QUOTE_ASSETS.filter((asset) => asset.category === "core").map(
+    (asset) => asset.symbol,
+  ),
+  "Stocks",
+  ...QUOTE_ASSETS.filter((asset) => asset.category === "stock").map(
+    (asset) => asset.symbol,
+  ),
+];
 const sorts = [
   ["Trending", "trending"],
   ["New", "new"],

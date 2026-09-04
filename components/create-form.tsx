@@ -7,7 +7,7 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { base } from "wagmi/chains";
-import { decodeEventLog, type Address, type Hex, zeroAddress } from "viem";
+import { decodeEventLog, type Address, type Hex } from "viem";
 import { ADDRESSES } from "@/lib/chain";
 import { factoryAbi } from "@/lib/abi/factory";
 import { mineSalt } from "@/lib/salt-miner";
@@ -16,10 +16,11 @@ import { Unaudited } from "./unaudited";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { prepareTokenImage } from "@/lib/image-upload";
+import { QUOTE_ASSETS, quoteAsset } from "@/lib/quotes";
 type Form = {
   name: string;
   symbol: string;
-  quote: "ETH" | "USDC";
+  quote: Address;
   image: string;
   description: string;
   website: string;
@@ -32,7 +33,7 @@ type LaunchStage = "idle" | "wallet" | "confirming" | "indexing" | "success";
 const initial: Form = {
   name: "",
   symbol: "",
-  quote: "ETH",
+  quote: ADDRESSES.eth,
   image: "",
   description: "",
   website: "",
@@ -125,7 +126,7 @@ export function CreateForm() {
             name: f.name.trim(),
             symbol: f.symbol.trim(),
             salt,
-            quote: f.quote === "ETH" ? zeroAddress : ADDRESSES.usdc,
+            quote: f.quote,
             profile: {
               image: f.image.trim(),
               description: f.description.trim(),
@@ -177,6 +178,7 @@ export function CreateForm() {
     }
   }
   const launching = launchStage !== "idle";
+  const selectedQuote = quoteAsset(f.quote) || QUOTE_ASSETS[0];
   const valid =
     f.name.trim().length > 0 &&
     f.name.length <= 50 &&
@@ -246,19 +248,38 @@ export function CreateForm() {
         </div>
         <div>
           <label className="label">Pair</label>
+          <p className="mb-2 text-xs text-twenty-muted">Core assets</p>
           <div className="grid grid-cols-2 gap-2">
-            {(["ETH", "USDC"] as const).map((q) => (
+            {QUOTE_ASSETS.filter((asset) => asset.category === "core").map((asset) => (
               <button
                 type="button"
                 disabled={launching}
-                onClick={() => update("quote", q)}
-                className={f.quote === q ? "btn-primary" : "btn-secondary"}
-                key={q}
+                onClick={() => update("quote", asset.address)}
+                className={f.quote.toLowerCase() === asset.address.toLowerCase() ? "btn-primary" : "btn-secondary"}
+                key={asset.address}
               >
-                {q}
+                {asset.symbol}
               </button>
             ))}
           </div>
+          <p className="mb-2 mt-4 text-xs text-twenty-muted">Tokenized stocks on Base</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {QUOTE_ASSETS.filter((asset) => asset.category === "stock").map((asset) => (
+              <button
+                type="button"
+                disabled={launching}
+                onClick={() => update("quote", asset.address)}
+                className={f.quote.toLowerCase() === asset.address.toLowerCase() ? "btn-primary" : "btn-secondary"}
+                key={asset.address}
+                title={asset.name}
+              >
+                {asset.symbol}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-twenty-muted">
+            Selected: {selectedQuote.name} ({selectedQuote.symbol}) · {selectedQuote.decimals} decimals
+          </p>
         </div>
         <div>
           <label className="label">Description</label>
@@ -308,7 +329,7 @@ export function CreateForm() {
                 {f.name || "Token name"}
               </h2>
               <p className="text-twenty-muted">
-                ${f.symbol || "SYMBOL"} / {f.quote}
+                ${f.symbol || "SYMBOL"} / {selectedQuote.symbol}
               </p>
             </div>
           </div>
@@ -353,7 +374,7 @@ export function CreateForm() {
           <div className="card max-w-lg p-6">
             <h2 className="text-2xl font-semibold">Review launch</h2>
             <p className="mt-2 text-twenty-muted">
-              {f.name} (${f.symbol}) paired with {f.quote}. Fixed 1B supply;
+              {f.name} (${f.symbol}) paired with {selectedQuote.symbol}. Fixed 1B supply;
               position permanently locked.
             </p>
             {predicted ? (

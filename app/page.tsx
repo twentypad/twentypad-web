@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DiscoveryDisplay } from "@/components/discovery-display";
 import { TopTokenStrip } from "@/components/top-token-strip";
-import { ADDRESSES } from "@/lib/chain";
+import { QUOTE_ASSETS, quoteAssetBySymbol } from "@/lib/quotes";
 import { money, number } from "@/lib/format";
 import {
   getDiscoverySummary,
@@ -26,14 +26,17 @@ export default async function Discover({
 }) {
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
+  const requestedPair = params.pair || "";
+  const selectedAsset = quoteAssetBySymbol(requestedPair);
   const pair =
-    params.pair === "ETH" || params.pair === "USDC" ? params.pair : undefined;
-  const quote =
-    pair === "ETH"
-      ? ADDRESSES.eth
-      : pair === "USDC"
-        ? ADDRESSES.usdc
-        : undefined;
+    requestedPair === "Stocks" || selectedAsset ? requestedPair : undefined;
+  const quote = selectedAsset?.address;
+  const stockQuotes =
+    pair === "Stocks"
+      ? QUOTE_ASSETS.filter((asset) => asset.category === "stock").map(
+          (asset) => asset.address,
+        )
+      : undefined;
   const allowedSorts = [
     "trending",
     "new",
@@ -45,7 +48,7 @@ export default async function Discover({
   const sort = allowedSorts.includes(params.sort || "") ? params.sort : "new";
   const view = params.view === "list" ? "list" : "cards";
   const [result, summary, top] = await Promise.all([
-    getDiscoveryTokens({ q: params.q, quote, sort, page, pageSize: 24 }),
+    getDiscoveryTokens({ q: params.q, quote, quotes: stockQuotes, sort, page, pageSize: 24 }),
     getDiscoverySummary(),
     getDiscoveryTokens({ sort: "volume", page: 1, pageSize: 6 }),
   ]);
@@ -74,7 +77,7 @@ export default async function Discover({
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           ["Tokens launched", number(summary.tokens)],
-          ["24h volume", number(summary.volume24h)],
+          ["Quote assets", number(QUOTE_ASSETS.length)],
           ["24h trades", number(summary.trades24h)],
           [
             "Highest FDV",
