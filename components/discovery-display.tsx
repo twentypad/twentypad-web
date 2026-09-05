@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Filter, Grid2X2, List, X } from "lucide-react";
+import {
+  BarChart3,
+  Filter,
+  Flame,
+  Grid2X2,
+  List,
+  ListFilter,
+  Sparkles,
+  TrendingUp,
+  X,
+} from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { Token } from "@/lib/types";
 import { TokenCardGrid } from "./token-card-grid";
@@ -10,23 +20,12 @@ import { QUOTE_ASSETS } from "@/lib/quotes";
 
 type View = "cards" | "list";
 const desktopPairs = ["All", "Crypto", "Stock"];
-const mobilePairs = [
-  "All",
-  "Crypto",
-  ...QUOTE_ASSETS.filter((asset) => asset.category === "core").map(
-    (asset) => asset.symbol,
-  ),
-  "Stock",
-  ...QUOTE_ASSETS.filter((asset) => asset.category === "stock").map(
-    (asset) => asset.symbol,
-  ),
-];
 const sorts = [
-  ["Trending", "trending"],
-  ["New", "new"],
-  ["FDV", "fdv"],
-  ["Volume", "volume"],
-  ["Trades", "trades"],
+  { title: "Trending", value: "trending", icon: Flame },
+  { title: "New", value: "new", icon: Sparkles },
+  { title: "FDV", value: "fdv", icon: BarChart3 },
+  { title: "Volume", value: "volume", icon: TrendingUp },
+  { title: "Trades", value: "trades", icon: ListFilter },
 ];
 
 export function DiscoveryDisplay({
@@ -45,9 +44,23 @@ export function DiscoveryDisplay({
   const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const coreSymbols: string[] = QUOTE_ASSETS.filter(
-    (asset) => asset.category === "core",
-  ).map((asset) => asset.symbol);
+  const coreAssets = QUOTE_ASSETS.filter((asset) => asset.category === "core");
+  const stockAssets = QUOTE_ASSETS.filter(
+    (asset) => asset.category === "stock",
+  );
+  const coreSymbols: string[] = coreAssets.map((asset) => asset.symbol);
+  const activeCategory =
+    pair === "All"
+      ? "All"
+      : pair === "Crypto" || coreSymbols.includes(pair)
+        ? "Crypto"
+        : "Stock";
+  const visibleMobileAssets =
+    activeCategory === "Crypto"
+      ? coreAssets
+      : activeCategory === "Stock"
+        ? stockAssets
+        : [];
 
   function desktopPairIsActive(item: string) {
     if (item === "All") return pair === "All";
@@ -84,8 +97,8 @@ export function DiscoveryDisplay({
       <button
         className={
           view === "cards"
-            ? "btn-primary h-10 min-h-10 px-3"
-            : "btn-secondary h-10 min-h-10 px-3"
+            ? "btn-primary h-12 min-h-12 w-12 px-0"
+            : "btn-secondary h-12 min-h-12 w-12 px-0"
         }
         onClick={() => choose("cards")}
         aria-label="Card view"
@@ -96,8 +109,8 @@ export function DiscoveryDisplay({
       <button
         className={
           view === "list"
-            ? "btn-primary h-10 min-h-10 px-3"
-            : "btn-secondary h-10 min-h-10 px-3"
+            ? "btn-primary h-12 min-h-12 w-12 px-0"
+            : "btn-secondary h-12 min-h-12 w-12 px-0"
         }
         onClick={() => choose("list")}
         aria-label="List view"
@@ -112,7 +125,7 @@ export function DiscoveryDisplay({
     <>
       <div className="mb-5 flex items-center gap-2">
         <button
-          className="btn-secondary h-10 min-h-10 px-3 md:hidden"
+          className="btn-secondary h-12 min-h-12 px-4 md:hidden"
           onClick={() => setFiltersOpen(true)}
           aria-label="Open token filters"
         >
@@ -120,7 +133,7 @@ export function DiscoveryDisplay({
           <span className="text-xs">Filter</span>
         </button>
         <div className="hidden min-w-0 flex-1 items-center gap-1 md:flex">
-          <div className="flex items-center gap-1 rounded-xl border border-twenty-line bg-twenty-surface/50 p-1">
+          <div className="flex h-12 shrink-0 items-center gap-1 rounded-xl border border-twenty-line bg-twenty-surface/50 p-1">
             {desktopPairs.map((item) => (
               <button
                 key={item}
@@ -129,26 +142,27 @@ export function DiscoveryDisplay({
                 }
                 className={
                   desktopPairIsActive(item)
-                    ? "rounded-lg bg-twenty-blue px-4 py-2 text-sm font-semibold text-white"
-                    : "rounded-lg px-4 py-2 text-sm font-medium text-twenty-muted transition hover:text-white"
+                    ? "inline-flex h-10 items-center rounded-lg bg-twenty-blue px-5 text-sm font-semibold text-white"
+                    : "inline-flex h-10 items-center rounded-lg px-5 text-sm font-medium text-twenty-muted transition hover:text-white"
                 }
               >
                 {item}
               </button>
             ))}
           </div>
-          <span className="mx-1 h-5 w-px bg-twenty-line" />
-          <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-            {sorts.map(([title, value]) => (
+          <span className="mx-1 h-7 w-px shrink-0 bg-twenty-line" />
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {sorts.map(({ title, value, icon: Icon }) => (
               <button
                 key={value}
                 onClick={() => update("sort", value)}
                 className={
                   sort === value
-                    ? "pill border-twenty-blue bg-twenty-blue/10 text-white"
-                    : "pill"
+                    ? "inline-flex h-12 shrink-0 items-center gap-2 rounded-xl border border-twenty-blue bg-twenty-blue/10 px-4 text-sm font-semibold text-white"
+                    : "inline-flex h-12 shrink-0 items-center gap-2 rounded-xl border border-twenty-line px-4 text-sm font-medium text-twenty-muted transition hover:border-twenty-blue/60 hover:text-white"
                 }
               >
+                <Icon size={17} aria-hidden="true" />
                 {title}
               </button>
             ))}
@@ -169,11 +183,16 @@ export function DiscoveryDisplay({
           onClick={() => setFiltersOpen(false)}
         >
           <div
-            className="absolute inset-x-4 bottom-4 rounded-2xl border border-twenty-line bg-twenty-navy-2 p-5 shadow-2xl"
+            className="absolute inset-x-4 bottom-4 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-twenty-line bg-twenty-navy-2 p-5 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="filter-launches-title"
           >
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="font-semibold">Filter launches</h3>
+              <h3 id="filter-launches-title" className="font-semibold">
+                Filter launches
+              </h3>
               <button
                 className="grid h-9 w-9 place-items-center rounded-lg border border-twenty-line"
                 onClick={() => setFiltersOpen(false)}
@@ -182,40 +201,63 @@ export function DiscoveryDisplay({
                 <X size={17} />
               </button>
             </div>
-            <p className="mb-2 text-xs uppercase tracking-wide text-twenty-muted">
-              Pair
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-twenty-muted">
+              Market
             </p>
-            <div className="flex flex-wrap gap-2">
-              {mobilePairs.map((item) => (
+            <div className="grid grid-cols-3 gap-2 rounded-xl border border-twenty-line bg-twenty-surface/40 p-1.5">
+              {desktopPairs.map((item) => (
                 <button
                   key={item}
                   onClick={() =>
                     update("pair", item === "All" ? undefined : item)
                   }
                   className={
-                    pair === item
-                      ? "pill border-twenty-blue bg-twenty-blue/10 text-white"
-                      : "pill"
+                    activeCategory === item
+                      ? "h-11 rounded-lg bg-twenty-blue px-2 text-sm font-semibold text-white"
+                      : "h-11 rounded-lg px-2 text-sm font-medium text-twenty-muted"
                   }
                 >
                   {item}
                 </button>
               ))}
             </div>
-            <p className="mb-2 mt-5 text-xs uppercase tracking-wide text-twenty-muted">
+            {visibleMobileAssets.length > 0 && (
+              <>
+                <p className="mb-3 mt-5 text-xs font-semibold uppercase tracking-wide text-twenty-muted">
+                  {activeCategory === "Crypto" ? "Crypto pair" : "Stock pair"}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {visibleMobileAssets.map((asset) => (
+                    <button
+                      key={asset.symbol}
+                      onClick={() => update("pair", asset.symbol)}
+                      className={
+                        pair === asset.symbol
+                          ? "h-11 rounded-xl border border-twenty-blue bg-twenty-blue/10 px-3 text-sm font-semibold text-white"
+                          : "h-11 rounded-xl border border-twenty-line px-3 text-sm font-medium text-twenty-muted"
+                      }
+                    >
+                      {asset.symbol}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            <p className="mb-3 mt-5 text-xs font-semibold uppercase tracking-wide text-twenty-muted">
               Sort by
             </p>
-            <div className="flex flex-wrap gap-2">
-              {sorts.map(([title, value]) => (
+            <div className="grid grid-cols-2 gap-2">
+              {sorts.map(({ title, value, icon: Icon }) => (
                 <button
                   key={value}
                   onClick={() => update("sort", value)}
                   className={
                     sort === value
-                      ? "pill border-twenty-blue bg-twenty-blue/10 text-white"
-                      : "pill"
+                      ? "flex h-11 items-center justify-center gap-2 rounded-xl border border-twenty-blue bg-twenty-blue/10 px-3 text-sm font-semibold text-white"
+                      : "flex h-11 items-center justify-center gap-2 rounded-xl border border-twenty-line px-3 text-sm font-medium text-twenty-muted"
                   }
                 >
+                  <Icon size={17} aria-hidden="true" />
                   {title}
                 </button>
               ))}
