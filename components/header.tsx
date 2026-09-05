@@ -47,9 +47,6 @@ export function Header() {
             />
           </form>
           <div className="ml-auto flex min-w-0 items-center justify-end gap-1.5 sm:gap-2">
-            <span className="pill shrink-0 px-2 text-[10px] sm:px-2.5 sm:text-xs">
-              Base · B20
-            </span>
             <div className="shrink-0">
               <ConnectButton
                 accountStatus="avatar"

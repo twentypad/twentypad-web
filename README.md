@@ -51,6 +51,16 @@ The discovery page uses only indexed data. A new token starts with its real tick
 
 The `/swap` page uses an in-place, searchable token selector and supports only the verified direct PoolKey belonging to the selected TwentyPad token. Supported quote assets are ETH, USDC, AAPLc, AMZNc, GOOGLc, METAc, MSFTc, MSTRc, NVDAc, SNDKc, SPCXc, and TSLAc. It does not hand custom-hook pools to a generic aggregator. When upgrading from an earlier indexer version, run `supabase/schema.sql` once before deploying the new application code; the idempotent migration corrects the earlier reversed trade-side and quote-flow values and refreshes affected token statistics.
 
+Swap execution uses the verified `TwentyPadSwapRouter` at
+`0xaa8dac41aec9e253d550e42673795f9251d8bedc`. Users can pay with ETH or USDC and
+receive ETH or USDC when selling. For stock-quoted launches, the client discovers
+the best executable Uniswap v3 route across the standard fee tiers, optionally
+routing through USDC, and supplies independently slippage-bounded bridge and
+TwentyPad legs to the adapter. ERC-20 approvals target the adapter; its internal
+Permit2 allowances are temporary. The deployed adapter does not support receiving
+the stock quote directly on a sale, so the UI deliberately offers only ETH and
+USDC settlement.
+
 ## Contract addresses
 
 All production Base addresses are centralized in `lib/chain.ts`. Factory/profile/event ABIs and fee escrow calls match the open-source contracts at `github.com/twentypad/b20-instant-launcher`.

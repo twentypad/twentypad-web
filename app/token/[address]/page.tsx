@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getToken, getTrades } from "@/lib/supabase/queries";
+import { getToken } from "@/lib/supabase/queries";
 import { TokenImage } from "@/components/token-image";
 import { SwapTicket } from "@/components/swap-ticket";
-import { TradeList } from "@/components/trade-list";
 import { quoteSymbol } from "@/lib/market/tick-price";
 import { age, label, money, number, shortAddress } from "@/lib/format";
 import { CopyButton } from "@/components/copy-button";
+import { GeckoTerminalChart } from "@/components/geckoterminal-chart";
 export const revalidate = 15;
 type P = { params: Promise<{ address: string }> };
 export async function generateMetadata({ params }: P): Promise<Metadata> {
@@ -21,10 +21,7 @@ export async function generateMetadata({ params }: P): Promise<Metadata> {
 }
 export default async function TokenPage({ params }: P) {
   const { address } = await params;
-  const [t, trades] = await Promise.all([
-    getToken(address),
-    getTrades(address),
-  ]);
+  const t = await getToken(address);
   if (!t) notFound();
   const s = t.token_stats;
   const pair = quoteSymbol(t.quote);
@@ -108,12 +105,30 @@ export default async function TokenPage({ params }: P) {
           </div>
         ))}
       </section>
-      <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
-        <section>
-          <h2 className="mb-3 text-xl font-semibold">Recent trades</h2>
-          <TradeList trades={trades} />
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+        <section className="min-w-0">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-semibold">{label(t.symbol)} chart</h2>
+              <p className="mt-1 text-sm text-twenty-muted">
+                Live market data from GeckoTerminal
+              </p>
+            </div>
+            <a
+              className="text-sm text-twenty-blue-soft hover:underline"
+              href={`https://www.geckoterminal.com/base/pools/${t.pool_id}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open in GeckoTerminal ↗
+            </a>
+          </div>
+          <GeckoTerminalChart
+            poolId={t.pool_id}
+            symbol={label(t.symbol)}
+          />
         </section>
-        <aside>
+        <aside className="self-start lg:sticky lg:top-20">
           <SwapTicket token={t} />
           <div className="card mt-4 p-4 text-sm">
             <span className="text-twenty-muted">Creator</span>
@@ -129,6 +144,53 @@ export default async function TokenPage({ params }: P) {
           </div>
         </aside>
       </div>
+      <section className="border-t border-white/10 pt-8" aria-labelledby="disclosures-title">
+        <div className="max-w-3xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-twenty-blue-soft">
+            Read before trading
+          </p>
+          <h2 id="disclosures-title" className="mt-2 text-2xl font-semibold">
+            Disclosures
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-twenty-muted">
+            Onchain markets carry risk. Review the token contract, pool, quote
+            asset, and expected output before confirming a transaction.
+          </p>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {[
+            [
+              "Locked liquidity and limited control",
+              "The launch liquidity position is permanently locked in the TwentyPad hook. The creator cannot withdraw the seeded position, mint additional supply, pause trading, or freeze transfers.",
+            ],
+            [
+              "Fixed supply",
+              "TwentyPad B20 tokens have a fixed supply of 1 billion tokens. The supply cannot be increased after launch.",
+            ],
+            [
+              "Creator and platform fees",
+              `The normal trading fee is 1%. It is split 70% to the creator and 30% to the platform. Fees are collected in the pool's paired asset (${pair}).`,
+            ],
+            [
+              "Quote asset and settlement",
+              `This token is paired with ${pair}. Direct sales settle in ${pair}; receiving ETH or USDC instead may require an additional routed swap and sufficient external liquidity.`,
+            ],
+            [
+              "Tokenized stock risk",
+              "A tokenized stock is not the underlying share itself. Availability, pricing, redemption, issuer terms, reference-market hours, and liquidity may differ from traditional equity markets.",
+            ],
+            [
+              "Third-party market data",
+              "The chart is provided by GeckoTerminal and may be delayed, unavailable, or differ from the executable quote. The amount shown by the swap form and wallet confirmation is what applies to your transaction.",
+            ],
+          ].map(([title, copy]) => (
+            <article className="card p-5" key={title}>
+              <h3 className="font-semibold">{title}</h3>
+              <p className="mt-2 text-sm leading-6 text-twenty-muted">{copy}</p>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

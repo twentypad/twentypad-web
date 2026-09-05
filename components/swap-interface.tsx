@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, Check, Search, Settings2, X } from "lucide-react";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
+import { formatUnits, parseUnits, type Address } from "viem";
 import {
   useAccount,
   useBalance,
@@ -18,12 +18,17 @@ import { toast } from "sonner";
 import type { Token } from "@/lib/types";
 import { ADDRESSES } from "@/lib/chain";
 import { shortAddress, label } from "@/lib/format";
-import { buildDirectSwap, poolKey, quoterAbi } from "@/lib/uniswap-v4";
 import { erc20Abi } from "@/lib/abi/erc20";
-import { permit2Abi } from "@/lib/abi/permit2";
 import { tokenImageUrl } from "./token-image";
 import { Unaudited } from "./unaudited";
-import { isNativeQuote, quoteDecimals, quoteSymbol } from "@/lib/quotes";
+import { isNativeQuote, isStockQuote, quoteDecimals, quoteSymbol } from "@/lib/quotes";
+import {
+  buildAdapterTransaction,
+  buildBridgePlan,
+  quoteAdapterSwap,
+  swapRouterAddress,
+  type AdapterQuote,
+} from "@/lib/twentypad-swap-router";
 
 type SelectorSide = "pay" | "receive";
 
@@ -126,13 +131,15 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
   const [buy, setBuy] = useState(true);
   const [amount, setAmount] = useState("");
   const [out, setOut] = useState<bigint>();
+  const [adapterQuote, setAdapterQuote] = useState<AdapterQuote>();
+  const [settlement, setSettlement] = useState<Address>(ADDRESSES.usdc);
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState("");
   const [working, setWorking] = useState(false);
   const [selector, setSelector] = useState<SelectorSide>();
   const [query, setQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [slippage, setSlippage] = useState(15);
+  const [slippage, setSlippage] = useState(5);
   const { address } = useAccount();
   const { openConnectModal } = useConnectModal();
   const client = usePublicClient({ chainId: base.id });
@@ -140,12 +147,12 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
   const { writeContractAsync } = useWriteContract();
 
   const quote = token?.quote;
-  const pairDecimals = quote ? quoteDecimals(quote) : 18;
-  const inputAsset = token && quote ? (buy ? quote : token.address) : undefined;
+  const settlementDecimals = quoteDecimals(settlement);
+  const inputAsset = token && quote ? (buy ? settlement : token.address) : undefined;
   const outputAsset =
-    token && quote ? (buy ? token.address : quote) : undefined;
-  const inputDecimals = buy ? pairDecimals : token?.decimals || 18;
-  const outputDecimals = buy ? token?.decimals || 18 : pairDecimals;
+    token && quote ? (buy ? token.address : settlement) : undefined;
+  const inputDecimals = buy ? settlementDecimals : token?.decimals || 18;
+  const outputDecimals = buy ? token?.decimals || 18 : settlementDecimals;
   const {
     data: inputBalance,
     error: inputBalanceError,
@@ -179,6 +186,7 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
 
   useEffect(() => {
     setOut(undefined);
+    setAdapterQuote(undefined);
     setQuoteError("");
     if (!token || !quote || !client || !amount || Number(amount) <= 0) return;
     const quoter = process.env.NEXT_PUBLIC_V4_QUOTER_ADDRESS as
@@ -190,24 +198,16 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
     const timer = setTimeout(async () => {
       try {
         setQuoting(true);
-        const key = poolKey(token.address, quote);
-        const zeroForOne = buy
-          ? key.currency0 === quote
-          : key.currency0 === token.address;
-        const result = await client.readContract({
-          address: quoter,
-          abi: quoterAbi,
-          functionName: "quoteExactInputSingle",
-          args: [
-            {
-              poolKey: key,
-              zeroForOne,
-              exactAmount: parseUnits(amount, inputDecimals),
-              hookData: "0x",
-            },
-          ],
+        const result = await quoteAdapterSwap({
+          client,
+          buy,
+          launchToken: token.address,
+          quoteToken: quote,
+          settlementToken: settlement,
+          amountIn: parseUnits(amount, inputDecimals),
         });
-        setOut(result[0]);
+        setAdapterQuote(result);
+        setOut(result.finalOut);
       } catch (error) {
         setQuoteError(
           error instanceof Error ? error.message : "Unable to quote this swap.",
@@ -217,10 +217,11 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
       }
     }, 450);
     return () => clearTimeout(timer);
-  }, [amount, buy, client, inputDecimals, quote, token]);
+  }, [amount, buy, client, inputDecimals, quote, settlement, token]);
 
   function selectB20(nextToken: Token) {
     setToken(nextToken);
+    setSettlement(isStockQuote(nextToken.quote) ? ADDRESSES.usdc : nextToken.quote);
     setBuy(selector !== "pay");
     setAmount("");
     setOut(undefined);
@@ -228,8 +229,8 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
     setQuery("");
   }
 
-  function selectQuote() {
-    if (!token) return;
+  function selectSettlement(next: Address) {
+    setSettlement(next);
     setBuy(selector === "pay");
     setAmount("");
     setOut(undefined);
@@ -247,54 +248,52 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
   async function approve(asset: Address, amountIn: bigint) {
     if (isNative(asset)) return;
     if (!client || !address) throw new Error("Wallet client is unavailable");
-    const now = Math.floor(Date.now() / 1000);
-    const expiry = now + 30 * 24 * 3600;
     const erc20Allowance = await client.readContract({
       address: asset,
       abi: erc20Abi,
       functionName: "allowance",
-      args: [address, ADDRESSES.permit2],
+      args: [address, swapRouterAddress()],
     });
     if (erc20Allowance < amountIn) {
       const approval = await writeContractAsync({
         address: asset,
         abi: erc20Abi,
         functionName: "approve",
-        args: [ADDRESSES.permit2, maxUint256],
+        args: [swapRouterAddress(), amountIn],
       });
       await client.waitForTransactionReceipt({ hash: approval });
-    }
-    const permitAllowance = await client.readContract({
-      address: ADDRESSES.permit2,
-      abi: permit2Abi,
-      functionName: "allowance",
-      args: [address, asset, ADDRESSES.router],
-    });
-    if (permitAllowance[0] < amountIn || permitAllowance[1] <= now + 1200) {
-      const permit = await writeContractAsync({
-        address: ADDRESSES.permit2,
-        abi: permit2Abi,
-        functionName: "approve",
-        args: [asset, ADDRESSES.router, (1n << 160n) - 1n, expiry],
-      });
-      await client.waitForTransactionReceipt({ hash: permit });
     }
   }
 
   async function swap() {
-    if (!token || !quote || !address || !out || !client || !inputAsset) return;
+    if (!token || !quote || !address || !out || !adapterQuote || !client || !inputAsset) return;
     try {
       setWorking(true);
       const amountIn = parseUnits(amount, inputDecimals);
       await approve(inputAsset, amountIn);
-      const minOut = (out * BigInt(10_000 - slippage * 100)) / 10_000n;
-      const transaction = buildDirectSwap({
-        token: token.address,
-        quote,
+      const multiplier = BigInt(10_000 - slippage * 100);
+      const minQuoteOut = (adapterQuote.quoteOut * multiplier) / 10_000n;
+      const minFinalOut = (out * multiplier) / 10_000n;
+      const bridge = adapterQuote.bridge
+        ? buildBridgePlan({
+            tokenIn: buy ? settlement : quote,
+            tokenOut: buy ? quote : settlement,
+            amountIn: buy ? amountIn : adapterQuote.quoteOut,
+            minOut: buy ? minQuoteOut : minFinalOut,
+            path: adapterQuote.bridge.path,
+          })
+        : { commands: "0x" as const, inputs: [] };
+      const transaction = buildAdapterTransaction({
         buy,
+        launchToken: token.address,
+        quoteToken: quote,
+        settlementToken: settlement,
         amountIn,
-        minOut,
+        minQuoteOut,
+        minFinalOut,
         deadline: BigInt(Math.floor(Date.now() / 1000) + 1200),
+        recipient: address,
+        bridge,
       });
       await client.estimateGas({
         account: address,
@@ -339,7 +338,7 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
   const receiveIsToken = Boolean(token && buy);
 
   function selectorButton(side: SelectorSide, isToken: boolean) {
-    const selectedQuote = token && !isToken ? token.quote : undefined;
+    const selectedQuote = token && !isToken ? settlement : undefined;
     return (
       <button
         disabled={working}
@@ -356,7 +355,7 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
           {token
             ? isToken
               ? label(token.symbol)
-              : quoteName(token.quote)
+              : quoteName(settlement)
             : "Select token"}
         </span>
         <span className="text-twenty-muted">⌄</span>
@@ -470,7 +469,7 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
               </div>
               <div className="mt-2 flex justify-between gap-5">
                 <span>Route</span>
-                <span className="text-right">Direct TwentyPad v4 hook</span>
+                <span className="text-right">{adapterQuote?.route || "—"}</span>
               </div>
             </div>
           )}
@@ -550,29 +549,23 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
                 className="input pl-11"
               />
             </div>
-            {token && (
+            {token && selector && ((selector === "pay" && buy) || (selector === "receive" && !buy)) && (
               <div className="px-4 pt-4">
-                <button
-                  onClick={selectQuote}
-                  className="flex w-full items-center gap-3 rounded-2xl border border-twenty-line p-3 text-left hover:bg-twenty-surface"
-                >
-                  <AssetIcon quote={token.quote} size={38} />
-                  <div>
-                    <div className="font-semibold">
-                      {quoteName(token.quote)}
-                    </div>
-                    <div className="text-xs text-twenty-muted">
-                      Base · pool quote token
-                    </div>
-                  </div>
-                  {((selector === "pay" && buy) ||
-                    (selector === "receive" && !buy)) && (
-                    <Check
-                      className="ml-auto text-twenty-blue-soft"
-                      size={18}
-                    />
-                  )}
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  {[ADDRESSES.eth, ADDRESSES.usdc].map((asset) => (
+                    <button
+                      key={asset}
+                      onClick={() => selectSettlement(asset)}
+                      className="flex items-center gap-3 rounded-2xl border border-twenty-line p-3 text-left hover:bg-twenty-surface"
+                    >
+                      <AssetIcon quote={asset} size={38} />
+                      <span className="font-semibold">{quoteName(asset)}</span>
+                      {settlement.toLowerCase() === asset.toLowerCase() && (
+                        <Check className="ml-auto text-twenty-blue-soft" size={18} />
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <div className="mt-4 max-h-[52vh] overflow-y-auto border-t border-twenty-line p-2">

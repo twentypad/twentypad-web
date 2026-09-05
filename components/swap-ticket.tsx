@@ -1,300 +1,148 @@
 "use client";
+
 import { useEffect, useState } from "react";
-import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
-import {
-  useAccount,
-  useBalance,
-  usePublicClient,
-  useReadContract,
-  useSendTransaction,
-  useWriteContract,
-} from "wagmi";
+import { formatUnits, parseUnits, type Address } from "viem";
+import { useAccount, useBalance, usePublicClient, useReadContract, useSendTransaction, useWriteContract } from "wagmi";
 import { base } from "wagmi/chains";
+import { toast } from "sonner";
 import type { Token } from "@/lib/types";
 import { ADDRESSES } from "@/lib/chain";
-import { poolKey, quoterAbi, buildDirectSwap } from "@/lib/uniswap-v4";
 import { erc20Abi } from "@/lib/abi/erc20";
-import { permit2Abi } from "@/lib/abi/permit2";
-import { toast } from "sonner";
+import { isNativeQuote, isStockQuote, quoteDecimals, quoteSymbol } from "@/lib/quotes";
+import { buildAdapterTransaction, buildBridgePlan, quoteAdapterSwap, swapRouterAddress, type AdapterQuote } from "@/lib/twentypad-swap-router";
 import { Unaudited } from "./unaudited";
-import { isNativeQuote, quoteDecimals, quoteSymbol } from "@/lib/quotes";
+
 export function SwapTicket({ token }: { token: Token }) {
-  const [buy, setBuy] = useState(true),
-    [amount, setAmount] = useState(""),
-    [out, setOut] = useState<bigint>(),
-    [quoting, setQuoting] = useState(false),
-    [working, setWorking] = useState(false),
-    [slippage, setSlippage] = useState(15);
+  const [buy, setBuy] = useState(true);
+  const [settlement, setSettlement] = useState<Address>(
+    isStockQuote(token.quote) ? ADDRESSES.usdc : token.quote,
+  );
+  const [amount, setAmount] = useState("");
+  const [quote, setQuote] = useState<AdapterQuote>();
+  const [quoteError, setQuoteError] = useState("");
+  const [quoting, setQuoting] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [slippage, setSlippage] = useState(5);
   const { address } = useAccount();
   const client = usePublicClient({ chainId: base.id });
   const { sendTransactionAsync, isPending } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
-  const quote = token.quote,
-    pairDecimals = quoteDecimals(quote),
-    pairSymbol = quoteSymbol(quote);
-  const inputDecimals = buy ? pairDecimals : token.decimals;
-  const inputAsset = buy ? quote : token.address;
+  const inputAsset = buy ? settlement : token.address;
+  const inputDecimals = buy ? quoteDecimals(settlement) : token.decimals;
+  const outputDecimals = buy ? token.decimals : quoteDecimals(settlement);
   const inputIsNative = isNativeQuote(inputAsset);
-  const nativeBalance = useBalance({
-    address,
-    chainId: base.id,
-    query: {
-      enabled: Boolean(address && inputIsNative),
-      refetchInterval: 12_000,
-    },
-  });
+  const nativeBalance = useBalance({ address, chainId: base.id, query: { enabled: Boolean(address && inputIsNative), refetchInterval: 12_000 } });
   const tokenBalance = useReadContract({
     address: !inputIsNative ? inputAsset : undefined,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
     chainId: base.id,
-    query: {
-      enabled: Boolean(address && !inputIsNative),
-      refetchInterval: 12_000,
-    },
+    query: { enabled: Boolean(address && !inputIsNative), refetchInterval: 12_000 },
   });
-  const inputBalance = inputIsNative
-    ? nativeBalance.data?.value
-    : (tokenBalance.data as bigint | undefined);
-  const inputBalanceLoading = inputIsNative
-    ? nativeBalance.isLoading
-    : tokenBalance.isLoading;
-  const inputSymbol = buy ? pairSymbol : token.symbol || "B20";
+  const inputBalance = inputIsNative ? nativeBalance.data?.value : (tokenBalance.data as bigint | undefined);
 
-  function setBalancePercentage(percent: number) {
-    if (inputBalance === undefined) return;
-    let selected = (inputBalance * BigInt(percent)) / 100n;
-    if (percent === 100 && inputIsNative) {
-      const gasReserve = parseUnits("0.0005", 18);
-      selected = inputBalance > gasReserve ? inputBalance - gasReserve : 0n;
-    }
-    setAmount(formatUnits(selected, inputDecimals));
-  }
   useEffect(() => {
     const timer = setTimeout(async () => {
-      setOut(undefined);
+      setQuote(undefined);
+      setQuoteError("");
       if (!client || !amount || Number(amount) <= 0) return;
-      const quoter = process.env.NEXT_PUBLIC_V4_QUOTER_ADDRESS as
-        Address | undefined;
-      if (!quoter) return;
       try {
         setQuoting(true);
-        const key = poolKey(token.address, quote);
-        const zeroForOne = buy
-          ? key.currency0 === quote
-          : key.currency0 === token.address;
-        const result = await client.readContract({
-          address: quoter,
-          abi: quoterAbi,
-          functionName: "quoteExactInputSingle",
-          args: [
-            {
-              poolKey: key,
-              zeroForOne,
-              exactAmount: parseUnits(amount, inputDecimals),
-              hookData: "0x",
-            },
-          ],
-        });
-        setOut(result[0]);
-      } catch (e) {
-        toast.error(
-          e instanceof Error ? e.message : "Dedicated hook quote failed",
-        );
+        setQuote(await quoteAdapterSwap({ client, buy, launchToken: token.address, quoteToken: token.quote, settlementToken: settlement, amountIn: parseUnits(amount, inputDecimals) }));
+      } catch (error) {
+        setQuoteError(error instanceof Error ? error.message : "No executable route is available.");
       } finally {
         setQuoting(false);
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [amount, buy, client, inputDecimals, quote, token.address]);
+  }, [amount, buy, client, inputDecimals, settlement, token.address, token.quote]);
+
+  function setBalancePercentage(percent: number) {
+    if (inputBalance === undefined) return;
+    let selected = (inputBalance * BigInt(percent)) / 100n;
+    if (percent === 100 && inputIsNative) {
+      const reserve = parseUnits("0.0005", 18);
+      selected = inputBalance > reserve ? inputBalance - reserve : 0n;
+    }
+    setAmount(formatUnits(selected, inputDecimals));
+  }
+
   async function approve(asset: Address, amountIn: bigint) {
     if (isNativeQuote(asset)) return;
-    if (!client || !address) throw new Error("Wallet client is unavailable");
-    const now = Math.floor(Date.now() / 1000);
-    const expiry = now + 30 * 24 * 3600;
-    const erc20Allowance = await client.readContract({
-      address: asset,
-      abi: erc20Abi,
-      functionName: "allowance",
-      args: [address, ADDRESSES.permit2],
-    });
-    if (erc20Allowance < amountIn) {
-      const hash = await writeContractAsync({
-        address: asset,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [ADDRESSES.permit2, maxUint256],
-      });
-      await client.waitForTransactionReceipt({ hash });
-    }
-    const permitAllowance = await client.readContract({
-      address: ADDRESSES.permit2,
-      abi: permit2Abi,
-      functionName: "allowance",
-      args: [address, asset, ADDRESSES.router],
-    });
-    if (permitAllowance[0] < amountIn || permitAllowance[1] <= now + 1200) {
-      const hash = await writeContractAsync({
-        address: ADDRESSES.permit2,
-        abi: permit2Abi,
-        functionName: "approve",
-        args: [asset, ADDRESSES.router, (1n << 160n) - 1n, expiry],
-      });
-      await client.waitForTransactionReceipt({ hash });
-    }
+    if (!client || !address) throw new Error("Wallet client is unavailable.");
+    const allowance = await client.readContract({ address: asset, abi: erc20Abi, functionName: "allowance", args: [address, swapRouterAddress()] });
+    if (allowance >= amountIn) return;
+    const hash = await writeContractAsync({ address: asset, abi: erc20Abi, functionName: "approve", args: [swapRouterAddress(), amountIn] });
+    await client.waitForTransactionReceipt({ hash });
   }
+
   async function swap() {
-    if (!address || !out || !client) return;
+    if (!address || !quote || !client) return;
     try {
       setWorking(true);
       const amountIn = parseUnits(amount, inputDecimals);
-      await approve(buy ? quote : token.address, amountIn);
-      const minOut = (out * BigInt(10_000 - slippage * 100)) / 10_000n;
-      const tx = buildDirectSwap({
-        token: token.address,
-        quote,
-        buy,
-        amountIn,
-        minOut,
-        deadline: BigInt(Math.floor(Date.now() / 1000) + 1200),
-      });
-      await client.estimateGas({
-        account: address,
-        to: tx.to,
-        data: tx.data,
-        value: tx.value,
-      });
-      const hash = await sendTransactionAsync({
-        to: tx.to,
-        data: tx.data,
-        value: tx.value,
-      });
+      await approve(inputAsset, amountIn);
+      const multiplier = BigInt(10_000 - slippage * 100);
+      const minQuoteOut = (quote.quoteOut * multiplier) / 10_000n;
+      const minFinalOut = (quote.finalOut * multiplier) / 10_000n;
+      const bridge = quote.bridge
+        ? buildBridgePlan({ tokenIn: buy ? settlement : token.quote, tokenOut: buy ? token.quote : settlement, amountIn: buy ? amountIn : quote.quoteOut, minOut: buy ? minQuoteOut : minFinalOut, path: quote.bridge.path })
+        : { commands: "0x" as const, inputs: [] };
+      const transaction = buildAdapterTransaction({ buy, launchToken: token.address, quoteToken: token.quote, settlementToken: settlement, amountIn, minQuoteOut, minFinalOut, deadline: BigInt(Math.floor(Date.now() / 1000) + 1200), recipient: address, bridge });
+      await client.estimateGas({ account: address, ...transaction });
+      const hash = await sendTransactionAsync(transaction);
       await client.waitForTransactionReceipt({ hash });
-      await fetch("/api/trades/upsert", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tx: hash, token: token.address }),
-      });
+      await fetch("/api/trades/upsert", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tx: hash, token: token.address }) });
       toast.success("Swap confirmed");
       setAmount("");
+      setQuote(undefined);
       await (inputIsNative ? nativeBalance.refetch() : tokenBalance.refetch());
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Swap failed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Swap failed");
     } finally {
       setWorking(false);
     }
   }
-  const anti = Math.max(
-    0,
-    20 -
-      Math.floor((Date.now() - new Date(token.launched_at).getTime()) / 1000),
-  );
+
+  const anti = Math.max(0, 20 - Math.floor((Date.now() - new Date(token.launched_at).getTime()) / 1000));
+  const busy = working || isPending;
   return (
     <div className="card p-5">
       <div className="grid grid-cols-2 gap-2">
-        {[true, false].map((v) => (
-          <button
-            key={String(v)}
-            onClick={() => setBuy(v)}
-            className={buy === v ? "btn-primary" : "btn-secondary"}
-          >
-            {v ? "Buy" : "Sell"}
-          </button>
-        ))}
+        {[true, false].map((value) => <button key={String(value)} onClick={() => { setBuy(value); setAmount(""); setQuote(undefined); }} className={buy === value ? "btn-primary" : "btn-secondary"}>{value ? "Buy" : "Sell"}</button>)}
       </div>
-      {anti > 0 && (
-        <div className="mt-4 rounded-xl bg-twenty-warning/10 p-3 text-sm text-twenty-warning">
-          Anti-snipe is active for about {anti}s. Fees decay from 99% to 1%;
-          exact-output is blocked.
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <span className="text-sm text-twenty-muted">{buy ? "Pay with" : "Receive"}</span>
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-twenty-navy-2 p-1">
+          {[ADDRESSES.eth, ADDRESSES.usdc].map((asset) => (
+            <button key={asset} onClick={() => { setSettlement(asset); setAmount(""); setQuote(undefined); }} className={`rounded-lg px-3 py-2 text-sm font-semibold ${settlement.toLowerCase() === asset.toLowerCase() ? "bg-twenty-blue text-white" : "text-twenty-muted"}`}>{quoteSymbol(asset)}</button>
+          ))}
         </div>
-      )}
+      </div>
+      {anti > 0 && <div className="mt-4 rounded-xl bg-twenty-warning/10 p-3 text-sm text-twenty-warning">Anti-snipe is active for about {anti}s.</div>}
       <div className="mt-5 flex items-center justify-between gap-3">
         <label className="label m-0">You pay</label>
-        <span className="text-xs text-twenty-muted">
-          Balance: {inputBalanceLoading
-            ? "…"
-            : inputBalance === undefined
-              ? "—"
-              : `${Number(formatUnits(inputBalance, inputDecimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${inputSymbol}`}
-        </span>
+        <span className="text-xs text-twenty-muted">Balance: {inputBalance === undefined ? "—" : formatUnits(inputBalance, inputDecimals)}</span>
       </div>
       <div className="relative">
-        <input
-          className="input pr-20 text-lg"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-        />
-        <span className="absolute right-3 top-3 text-sm text-twenty-muted">
-          {buy ? pairSymbol : token.symbol || "B20"}
-        </span>
+        <input className="input pr-24 text-lg" inputMode="decimal" value={amount} disabled={busy} onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))} />
+        <span className="absolute right-3 top-3 text-sm text-twenty-muted">{buy ? quoteSymbol(settlement) : token.symbol || "B20"}</span>
       </div>
       <div className="mt-2 grid grid-cols-5 gap-1.5">
-        {[10, 30, 50, 70, 100].map((percent) => (
-          <button
-            key={percent}
-            type="button"
-            disabled={inputBalance === undefined || inputBalance === 0n || working || isPending}
-            onClick={() => setBalancePercentage(percent)}
-            className="rounded-lg border border-twenty-line bg-twenty-navy px-1 py-2 text-xs font-semibold text-twenty-muted transition hover:border-twenty-blue hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {percent === 100 ? "Max" : `${percent}%`}
-          </button>
-        ))}
+        {[10, 30, 50, 70, 100].map((percent) => <button key={percent} disabled={inputBalance === undefined || inputBalance === 0n || busy} onClick={() => setBalancePercentage(percent)} className="rounded-lg border border-twenty-line bg-twenty-navy px-1 py-2 text-xs font-semibold text-twenty-muted hover:border-twenty-blue hover:text-white disabled:opacity-40">{percent === 100 ? "Max" : `${percent}%`}</button>)}
       </div>
       <label className="label mt-4">Estimated received</label>
-      <div className="input flex items-center text-lg">
-        {quoting
-          ? "Quoting…"
-          : out
-            ? formatUnits(out, buy ? token.decimals : pairDecimals)
-            : "—"}
-      </div>
-      {!process.env.NEXT_PUBLIC_V4_QUOTER_ADDRESS && (
-        <p className="mt-2 text-xs text-twenty-warning">
-          Dedicated v4 hook quoter is not configured. Generic Uniswap and
-          aggregator quotes may not price this pool.
-        </p>
-      )}
+      <div className="input flex items-center text-lg">{quoting ? "Quoting…" : quote ? formatUnits(quote.finalOut, outputDecimals) : "—"}</div>
+      {quoteError && <p className="mt-2 text-xs text-twenty-warning">{quoteError}</p>}
       <div className="mt-4 flex items-center justify-between text-xs text-twenty-muted">
-        <span>Slippage</span>
-        <select
-          value={slippage}
-          onChange={(e) => setSlippage(Number(e.target.value))}
-          className="rounded border border-twenty-line bg-twenty-navy p-2"
-        >
-          <option value={15}>15%</option>
-          <option value={25}>25% new pools</option>
-          <option value={5}>5%</option>
-        </select>
+        <span>Slippage per leg</span>
+        <select value={slippage} onChange={(event) => setSlippage(Number(event.target.value))} className="rounded border border-twenty-line bg-twenty-navy p-2"><option value={5}>5%</option><option value={15}>15%</option><option value={25}>25% new pools</option></select>
       </div>
-      <div className="mt-4 space-y-2 border-t border-twenty-line pt-4 text-xs text-twenty-muted">
-        <div className="flex justify-between">
-          <span>Fee</span>
-          <span>1% after anti-snipe</span>
-        </div>
-        <div className="flex justify-between gap-4">
-          <span>Route</span>
-          <span className="text-right">Direct quote → v4 hook</span>
-        </div>
-      </div>
-      <button
-        className="btn-primary mt-5 w-full"
-        disabled={!address || !out || working || isPending || anti > 0}
-        onClick={swap}
-      >
-        {!address
-          ? "Connect wallet"
-          : working || isPending
-            ? "Swapping…"
-            : anti > 0
-              ? "Wait for anti-snipe"
-              : "Swap"}
-      </button>
-      <div className="mt-4">
-        <Unaudited />
-      </div>
+      <div className="mt-4 border-t border-twenty-line pt-4 text-xs text-twenty-muted"><div className="flex justify-between gap-4"><span>Route</span><span className="text-right">{quote?.route || "—"}</span></div></div>
+      <button className="btn-primary mt-5 w-full" disabled={!address || !quote || busy || anti > 0 || Boolean(quoteError)} onClick={swap}>{!address ? "Connect wallet" : busy ? "Swapping…" : anti > 0 ? "Wait for anti-snipe" : "Swap"}</button>
+      <div className="mt-4"><Unaudited /></div>
     </div>
   );
 }

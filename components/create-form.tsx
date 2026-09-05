@@ -320,7 +320,7 @@ export function CreateForm() {
         </button>
         <Unaudited />
       </form>
-      <aside className="space-y-4">
+      <aside className="self-start space-y-4 lg:sticky lg:top-20">
         <div className="card p-5">
           <div className="flex items-center gap-3">
             <TokenImage src={f.image} alt={f.name || "Preview"} size={56} />
