@@ -123,7 +123,7 @@ export function DiscoveryDisplay({
 
   return (
     <>
-      <div className="mb-5 flex items-center gap-2">
+      <div className="mb-5 flex h-12 items-center gap-2">
         <button
           className="btn-secondary h-12 min-h-12 px-4 md:hidden"
           onClick={() => setFiltersOpen(true)}
@@ -151,7 +151,7 @@ export function DiscoveryDisplay({
             ))}
           </div>
           <span className="mx-1 h-7 w-px shrink-0 bg-twenty-line" />
-          <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex h-12 min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {sorts.map(({ title, value, icon: Icon }) => (
               <button
                 key={value}
@@ -168,7 +168,7 @@ export function DiscoveryDisplay({
             ))}
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-1">{viewButtons}</div>
+        <div className="ml-auto flex h-12 items-center gap-2">{viewButtons}</div>
       </div>
 
       {view === "cards" ? (

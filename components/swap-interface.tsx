@@ -17,7 +17,7 @@ import { base } from "wagmi/chains";
 import { toast } from "sonner";
 import type { Token } from "@/lib/types";
 import { ADDRESSES } from "@/lib/chain";
-import { shortAddress, label } from "@/lib/format";
+import { shortAddress, label, money } from "@/lib/format";
 import { erc20Abi } from "@/lib/abi/erc20";
 import { tokenImageUrl } from "./token-image";
 import { Unaudited } from "./unaudited";
@@ -29,6 +29,11 @@ import {
   swapRouterAddress,
   type AdapterQuote,
 } from "@/lib/twentypad-swap-router";
+import {
+  amountUsd,
+  launchUsdPrice,
+  settlementUsdPrice,
+} from "@/lib/market/usd";
 
 type SelectorSide = "pay" | "receive";
 
@@ -336,6 +341,31 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
     : 0;
   const payIsToken = Boolean(token && !buy);
   const receiveIsToken = Boolean(token && buy);
+  let parsedAmount: bigint | undefined;
+  try {
+    parsedAmount = amount && Number(amount) > 0 ? parseUnits(amount, inputDecimals) : undefined;
+  } catch {
+    parsedAmount = undefined;
+  }
+  const settlementUsd = settlementUsdPrice({
+    token,
+    settlement,
+    buy,
+    amountIn: parsedAmount,
+    inputDecimals,
+    outputDecimals,
+    quote: adapterQuote,
+  });
+  const tokenUsd = launchUsdPrice(token);
+  const inputUsd = amountUsd(amount, buy ? settlementUsd : tokenUsd);
+  const outputFormatted = out ? formatUnits(out, outputDecimals) : null;
+  const outputUsd = amountUsd(outputFormatted, buy ? tokenUsd : settlementUsd);
+  const inputBalanceUsd = inputBalance
+    ? amountUsd(formatUnits(inputBalance.value, inputBalance.decimals), buy ? settlementUsd : tokenUsd)
+    : null;
+  const outputBalanceUsd = outputBalance
+    ? amountUsd(formatUnits(outputBalance.value, outputBalance.decimals), buy ? tokenUsd : settlementUsd)
+    : null;
 
   function selectorButton(side: SelectorSide, isToken: boolean) {
     const selectedQuote = token && !isToken ? settlement : undefined;
@@ -399,6 +429,7 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
               <span>
                 Balance:{" "}
                 {inputBalanceLoading ? "…" : displayedBalance(inputBalance)}
+                {!inputBalanceLoading && inputBalanceUsd != null ? ` · ${money(inputBalanceUsd)}` : ""}
               </span>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -414,6 +445,9 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
                 className="min-w-0 flex-1 bg-transparent text-4xl outline-none placeholder:text-twenty-muted/50 disabled:opacity-50"
               />
               {selectorButton("pay", payIsToken)}
+            </div>
+            <div className="mt-2 min-h-5 text-sm text-twenty-muted">
+              {money(inputUsd)}
             </div>
             {inputBalance && (
               <button
@@ -441,7 +475,11 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
               <span>
                 Balance:{" "}
                 {outputBalanceLoading ? "…" : displayedBalance(outputBalance)}
+                {!outputBalanceLoading && outputBalanceUsd != null ? ` · ${money(outputBalanceUsd)}` : ""}
               </span>
+            </div>
+            <div className="mt-2 min-h-5 text-sm text-twenty-muted">
+              {money(outputUsd)}
             </div>
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1 truncate text-4xl text-twenty-muted">
@@ -589,6 +627,9 @@ export function SwapInterface({ tokens }: { tokens: Token[] }) {
                       {label(item.name)} · {shortAddress(item.address)}
                     </div>
                   </div>
+                  <span className="ml-auto shrink-0 text-sm text-twenty-muted">
+                    {money(item.token_stats?.price_usd)}
+                  </span>
                   {token?.address.toLowerCase() ===
                     item.address.toLowerCase() &&
                     ((selector === "pay" && !buy) ||

@@ -1,9 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Token } from "@/lib/types";
-import { age, label, money, number } from "@/lib/format";
+import { age, label, money } from "@/lib/format";
 import { quoteSymbol } from "@/lib/market/tick-price";
 import { tokenImageUrl } from "./token-image";
+import { launchUsdPrice } from "@/lib/market/usd";
 
 export function TopTokenStrip({ tokens }: { tokens: Token[] }) {
   return (
@@ -46,9 +47,7 @@ export function TopTokenStrip({ tokens }: { tokens: Token[] }) {
               </p>
               <div className="flex items-end justify-between gap-2">
                 <span className="text-sm font-semibold">
-                  {stats?.fdv_usd != null
-                    ? money(stats.fdv_usd)
-                    : `${number(stats?.fdv_quote)} ${pair}`}
+                  {money(stats?.fdv_usd ?? (launchUsdPrice(token) != null ? launchUsdPrice(token)! * 1_000_000_000 : null))}
                 </span>
                 <span
                   className={

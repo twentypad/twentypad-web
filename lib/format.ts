@@ -1,13 +1,15 @@
 export const shortAddress = (v: string) => `${v.slice(0, 6)}…${v.slice(-4)}`;
-export const money = (v: number | null | undefined) =>
-  v == null
-    ? "—"
-    : new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-        notation: v >= 1e6 ? "compact" : "standard",
-        maximumFractionDigits: v < 1 ? 6 : 2,
-      }).format(v);
+export const money = (v: number | null | undefined) => {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const absolute = Math.abs(v);
+  if (absolute > 0 && absolute < 0.01) return v < 0 ? "> -$0.01" : "< $0.01";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: absolute >= 1_000 ? "compact" : "standard",
+    maximumFractionDigits: absolute < 1 ? 4 : 2,
+  }).format(v);
+};
 export const number = (v: number | null | undefined) =>
   v == null
     ? "—"

@@ -11,6 +11,8 @@ import { erc20Abi } from "@/lib/abi/erc20";
 import { isNativeQuote, isStockQuote, quoteDecimals, quoteSymbol } from "@/lib/quotes";
 import { buildAdapterTransaction, buildBridgePlan, quoteAdapterSwap, swapRouterAddress, type AdapterQuote } from "@/lib/twentypad-swap-router";
 import { Unaudited } from "./unaudited";
+import { money } from "@/lib/format";
+import { amountUsd, launchUsdPrice, settlementUsdPrice } from "@/lib/market/usd";
 
 export function SwapTicket({ token }: { token: Token }) {
   const [buy, setBuy] = useState(true);
@@ -41,6 +43,20 @@ export function SwapTicket({ token }: { token: Token }) {
     query: { enabled: Boolean(address && !inputIsNative), refetchInterval: 12_000 },
   });
   const inputBalance = inputIsNative ? nativeBalance.data?.value : (tokenBalance.data as bigint | undefined);
+  let parsedAmount: bigint | undefined;
+  try {
+    parsedAmount = amount && Number(amount) > 0 ? parseUnits(amount, inputDecimals) : undefined;
+  } catch {
+    parsedAmount = undefined;
+  }
+  const settlementUsd = settlementUsdPrice({ token, settlement, buy, amountIn: parsedAmount, inputDecimals, outputDecimals, quote });
+  const tokenUsd = launchUsdPrice(token);
+  const inputUsd = amountUsd(amount, buy ? settlementUsd : tokenUsd);
+  const outputFormatted = quote ? formatUnits(quote.finalOut, outputDecimals) : null;
+  const outputUsd = amountUsd(outputFormatted, buy ? tokenUsd : settlementUsd);
+  const balanceUsd = inputBalance === undefined
+    ? null
+    : amountUsd(formatUnits(inputBalance, inputDecimals), buy ? settlementUsd : tokenUsd);
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -124,17 +140,19 @@ export function SwapTicket({ token }: { token: Token }) {
       {anti > 0 && <div className="mt-4 rounded-xl bg-twenty-warning/10 p-3 text-sm text-twenty-warning">Anti-snipe is active for about {anti}s.</div>}
       <div className="mt-5 flex items-center justify-between gap-3">
         <label className="label m-0">You pay</label>
-        <span className="text-xs text-twenty-muted">Balance: {inputBalance === undefined ? "—" : formatUnits(inputBalance, inputDecimals)}</span>
+        <span className="text-right text-xs text-twenty-muted">Balance: {inputBalance === undefined ? "—" : formatUnits(inputBalance, inputDecimals)}{balanceUsd != null ? ` · ${money(balanceUsd)}` : ""}</span>
       </div>
       <div className="relative">
         <input className="input pr-24 text-lg" inputMode="decimal" value={amount} disabled={busy} onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))} />
         <span className="absolute right-3 top-3 text-sm text-twenty-muted">{buy ? quoteSymbol(settlement) : token.symbol || "B20"}</span>
       </div>
+      <div className="mt-1 min-h-5 text-sm text-twenty-muted">{money(inputUsd)}</div>
       <div className="mt-2 grid grid-cols-5 gap-1.5">
         {[10, 30, 50, 70, 100].map((percent) => <button key={percent} disabled={inputBalance === undefined || inputBalance === 0n || busy} onClick={() => setBalancePercentage(percent)} className="rounded-lg border border-twenty-line bg-twenty-navy px-1 py-2 text-xs font-semibold text-twenty-muted hover:border-twenty-blue hover:text-white disabled:opacity-40">{percent === 100 ? "Max" : `${percent}%`}</button>)}
       </div>
       <label className="label mt-4">Estimated received</label>
       <div className="input flex items-center text-lg">{quoting ? "Quoting…" : quote ? formatUnits(quote.finalOut, outputDecimals) : "—"}</div>
+      <div className="mt-1 min-h-5 text-sm text-twenty-muted">{money(outputUsd)}</div>
       {quoteError && <p className="mt-2 text-xs text-twenty-warning">{quoteError}</p>}
       <div className="mt-4 flex items-center justify-between text-xs text-twenty-muted">
         <span>Slippage per leg</span>

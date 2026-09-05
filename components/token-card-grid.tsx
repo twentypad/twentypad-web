@@ -4,14 +4,11 @@ import type { Token } from "@/lib/types";
 import { age, label, money, number } from "@/lib/format";
 import { quoteSymbol } from "@/lib/market/tick-price";
 import { tokenImageUrl } from "./token-image";
+import { launchUsdPrice, quoteAmountUsd } from "@/lib/market/usd";
 
 function signedPercent(value?: number | null) {
   const amount = value ?? 0;
   return `${amount >= 0 ? "+" : ""}${amount.toFixed(2)}%`;
-}
-
-function quoteValue(value: number | null | undefined, symbol: string) {
-  return value == null ? "—" : `${number(value)} ${symbol}`;
 }
 
 export function TokenCardGrid({ tokens }: { tokens: Token[] }) {
@@ -62,9 +59,7 @@ export function TokenCardGrid({ tokens }: { tokens: Token[] }) {
                     FDV
                   </p>
                   <p className="text-sm font-semibold">
-                    {stats?.fdv_usd != null
-                      ? money(stats.fdv_usd)
-                      : quoteValue(stats?.fdv_quote, pair)}
+                    {money(stats?.fdv_usd ?? (launchUsdPrice(token) != null ? launchUsdPrice(token)! * 1_000_000_000 : null))}
                   </p>
                 </div>
                 <span
@@ -74,7 +69,9 @@ export function TokenCardGrid({ tokens }: { tokens: Token[] }) {
                 </span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 border-t border-twenty-line pt-2 text-[10px] text-twenty-muted">
-                <span>Vol {quoteValue(stats?.volume_24h, pair)}</span>
+                <span>
+                  Vol {stats?.volume_24h != null ? money(quoteAmountUsd(token, stats.volume_24h)) : "—"}
+                </span>
                 <span className="text-right">
                   {number(stats?.trades_24h)} trades
                 </span>

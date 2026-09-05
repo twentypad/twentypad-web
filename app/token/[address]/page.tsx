@@ -7,6 +7,7 @@ import { quoteSymbol } from "@/lib/market/tick-price";
 import { age, label, money, number, shortAddress } from "@/lib/format";
 import { CopyButton } from "@/components/copy-button";
 import { GeckoTerminalChart } from "@/components/geckoterminal-chart";
+import { launchUsdPrice, quoteAmountUsd } from "@/lib/market/usd";
 export const revalidate = 15;
 type P = { params: Promise<{ address: string }> };
 export async function generateMetadata({ params }: P): Promise<Metadata> {
@@ -93,10 +94,10 @@ export default async function TokenPage({ params }: P) {
       </div>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[
-          ["Price", s?.price_usd != null ? money(s.price_usd) : s?.price_quote != null ? `${number(s.price_quote)} ${pair}` : "—"],
-          ["FDV", s?.fdv_usd != null ? money(s.fdv_usd) : s?.fdv_quote != null ? `${number(s.fdv_quote)} ${pair}` : "—"],
-          ["Liquidity", s?.liquidity_quote != null ? `${number(s.liquidity_quote)} ${pair}` : "—"],
-          ["Volume 24h", s?.volume_24h != null ? `${number(s.volume_24h)} ${pair}` : "—"],
+          ["Price", money(launchUsdPrice(t))],
+          ["FDV", money(s?.fdv_usd ?? (launchUsdPrice(t) != null ? launchUsdPrice(t)! * 1_000_000_000 : null))],
+          ["Liquidity", s?.liquidity_quote != null ? money(quoteAmountUsd(t, s.liquidity_quote)) : "—"],
+          ["Volume 24h", s?.volume_24h != null ? money(quoteAmountUsd(t, s.volume_24h)) : "—"],
           ["Trades 24h", number(s?.trades_24h)],
         ].map(([k, v]) => (
           <div className="card p-4" key={k}>

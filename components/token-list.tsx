@@ -3,6 +3,7 @@ import { TokenImage } from "./token-image";
 import type { Token } from "@/lib/types";
 import { age, label, money, number } from "@/lib/format";
 import { quoteSymbol } from "@/lib/market/tick-price";
+import { launchUsdPrice, quoteAmountUsd } from "@/lib/market/usd";
 export function TokenList({ tokens }: { tokens: Token[] }) {
   if (!tokens.length)
     return (
@@ -67,22 +68,14 @@ export function TokenList({ tokens }: { tokens: Token[] }) {
                 </td>
                 <td className="px-4 text-twenty-muted">{age(t.launched_at)}</td>
                 <td className="px-4">
-                  {s?.price_usd != null
-                    ? money(s.price_usd)
-                    : s?.price_quote != null
-                      ? `${number(s.price_quote)} ${pair}`
-                      : "—"}
+                  {money(launchUsdPrice(t))}
                 </td>
                 <td className="px-4">
-                  {s?.fdv_usd != null
-                    ? money(s.fdv_usd)
-                    : s?.fdv_quote != null
-                      ? `${number(s.fdv_quote)} ${pair}`
-                      : "—"}
+                  {money(s?.fdv_usd ?? (launchUsdPrice(t) != null ? launchUsdPrice(t)! * 1_000_000_000 : null))}
                 </td>
                 <td className="px-4">
                   {s?.volume_24h != null
-                    ? `${number(s.volume_24h)} ${pair}`
+                    ? money(quoteAmountUsd(t, s.volume_24h))
                     : "—"}
                 </td>
                 <td className="px-4">{number(s?.trades_24h)}</td>
