@@ -26,17 +26,23 @@ export default async function Discover({
 }) {
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
-  const requestedPair = params.pair || "";
+  const requestedPair = params.pair === "Stocks" ? "Stock" : params.pair || "";
   const selectedAsset = quoteAssetBySymbol(requestedPair);
   const pair =
-    requestedPair === "Stocks" || selectedAsset ? requestedPair : undefined;
+    requestedPair === "Crypto" || requestedPair === "Stock" || selectedAsset
+      ? requestedPair
+      : undefined;
   const quote = selectedAsset?.address;
-  const stockQuotes =
-    pair === "Stocks"
-      ? QUOTE_ASSETS.filter((asset) => asset.category === "stock").map(
+  const groupedQuotes =
+    pair === "Crypto"
+      ? QUOTE_ASSETS.filter((asset) => asset.category === "core").map(
           (asset) => asset.address,
         )
-      : undefined;
+      : pair === "Stock"
+        ? QUOTE_ASSETS.filter((asset) => asset.category === "stock").map(
+            (asset) => asset.address,
+          )
+        : undefined;
   const allowedSorts = [
     "trending",
     "new",
@@ -48,7 +54,14 @@ export default async function Discover({
   const sort = allowedSorts.includes(params.sort || "") ? params.sort : "new";
   const view = params.view === "list" ? "list" : "cards";
   const [result, summary, top] = await Promise.all([
-    getDiscoveryTokens({ q: params.q, quote, quotes: stockQuotes, sort, page, pageSize: 24 }),
+    getDiscoveryTokens({
+      q: params.q,
+      quote,
+      quotes: groupedQuotes,
+      sort,
+      page,
+      pageSize: 24,
+    }),
     getDiscoverySummary(),
     getDiscoveryTokens({ sort: "volume", page: 1, pageSize: 6 }),
   ]);

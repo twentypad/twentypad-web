@@ -9,8 +9,6 @@ const nav = [
   ["Discover", "/"],
   ["Create", "/create"],
   ["Swap", "/swap"],
-  ["Guide", "/guide"],
-  ["About", "/about"],
 ];
 export function Header() {
   const [open, setOpen] = useState(false);
@@ -31,6 +29,14 @@ export function Header() {
                 {n}
               </Link>
             ))}
+            <a
+              className="rounded-lg px-3 py-2 text-sm text-twenty-muted hover:bg-twenty-surface hover:text-white"
+              href={EXTERNAL.docs}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Docs
+            </a>
           </nav>
           <form
             action="/"
@@ -85,6 +91,14 @@ export function Header() {
                 </Link>
               ),
             )}
+            <a
+              className="block rounded-xl px-4 py-3 text-twenty-muted hover:bg-twenty-surface"
+              href={EXTERNAL.docs}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Docs
+            </a>
             {Object.entries(EXTERNAL)
               .filter(([k]) => ["x", "telegram", "github"].includes(k))
               .map(([n, h]) => (

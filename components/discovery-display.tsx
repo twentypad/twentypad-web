@@ -9,12 +9,14 @@ import { TokenList } from "./token-list";
 import { QUOTE_ASSETS } from "@/lib/quotes";
 
 type View = "cards" | "list";
-const pairs = [
+const desktopPairs = ["All", "Crypto", "Stock"];
+const mobilePairs = [
   "All",
+  "Crypto",
   ...QUOTE_ASSETS.filter((asset) => asset.category === "core").map(
     (asset) => asset.symbol,
   ),
-  "Stocks",
+  "Stock",
   ...QUOTE_ASSETS.filter((asset) => asset.category === "stock").map(
     (asset) => asset.symbol,
   ),
@@ -43,6 +45,16 @@ export function DiscoveryDisplay({
   const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
+  const coreSymbols: string[] = QUOTE_ASSETS.filter(
+    (asset) => asset.category === "core",
+  ).map((asset) => asset.symbol);
+
+  function desktopPairIsActive(item: string) {
+    if (item === "All") return pair === "All";
+    if (item === "Crypto")
+      return pair === "Crypto" || coreSymbols.includes(pair);
+    return pair === "Stock" || (!coreSymbols.includes(pair) && pair !== "All");
+  }
 
   useEffect(() => {
     if (params.has("view")) return;
@@ -107,36 +119,42 @@ export function DiscoveryDisplay({
           <Filter size={17} />
           <span className="text-xs">Filter</span>
         </button>
-        <div className="hidden flex-wrap items-center gap-2 md:flex">
-          {pairs.map((item) => (
-            <button
-              key={item}
-              onClick={() => update("pair", item === "All" ? undefined : item)}
-              className={
-                pair === item
-                  ? "pill border-twenty-blue bg-twenty-blue/10 text-white"
-                  : "pill"
-              }
-            >
-              {item}
-            </button>
-          ))}
+        <div className="hidden min-w-0 flex-1 items-center gap-1 md:flex">
+          <div className="flex items-center gap-1 rounded-xl border border-twenty-line bg-twenty-surface/50 p-1">
+            {desktopPairs.map((item) => (
+              <button
+                key={item}
+                onClick={() =>
+                  update("pair", item === "All" ? undefined : item)
+                }
+                className={
+                  desktopPairIsActive(item)
+                    ? "rounded-lg bg-twenty-blue px-4 py-2 text-sm font-semibold text-white"
+                    : "rounded-lg px-4 py-2 text-sm font-medium text-twenty-muted transition hover:text-white"
+                }
+              >
+                {item}
+              </button>
+            ))}
+          </div>
           <span className="mx-1 h-5 w-px bg-twenty-line" />
-          {sorts.map(([title, value]) => (
-            <button
-              key={value}
-              onClick={() => update("sort", value)}
-              className={
-                sort === value
-                  ? "pill border-twenty-blue bg-twenty-blue/10 text-white"
-                  : "pill"
-              }
-            >
-              {title}
-            </button>
-          ))}
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+            {sorts.map(([title, value]) => (
+              <button
+                key={value}
+                onClick={() => update("sort", value)}
+                className={
+                  sort === value
+                    ? "pill border-twenty-blue bg-twenty-blue/10 text-white"
+                    : "pill"
+                }
+              >
+                {title}
+              </button>
+            ))}
+          </div>
         </div>
-      <div className="ml-auto flex items-center gap-1">{viewButtons}</div>
+        <div className="ml-auto flex items-center gap-1">{viewButtons}</div>
       </div>
 
       {view === "cards" ? (
@@ -168,7 +186,7 @@ export function DiscoveryDisplay({
               Pair
             </p>
             <div className="flex flex-wrap gap-2">
-              {pairs.map((item) => (
+              {mobilePairs.map((item) => (
                 <button
                   key={item}
                   onClick={() =>

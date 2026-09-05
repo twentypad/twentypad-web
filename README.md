@@ -2,6 +2,8 @@
 
 Production-oriented Next.js App Router UI for the Base-only TwentyPad B20 launchpad. It reads discovery data from Supabase, creates launches through the live factory with `value = 0`, and routes direct-pair swaps through the Universal Router with the explicit TwentyPad Uniswap v4 PoolKey.
 
+Documentation: [docs.twentypad.com](https://docs.twentypad.com/)
+
 > Unaudited. Use at your own risk.
 
 ## Requirements
